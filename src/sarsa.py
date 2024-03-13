@@ -5,19 +5,26 @@ rlsn 2024
 import numpy as np
 import itertools
 
+class SarsaAgent(object):
+    def __init__(self, Q, T=1.2):
+        self.Q = Q
+        self.T = T
+    def step(self, state, nA):
+        A = softmax_sampling_policy(self.Q, self.T, state, nA)
+        return A
+
 def epsilon_greedy_policy(Q, epsilon, state, nA):
     if np.random.rand()<epsilon:
         A = np.random.randint(0,nA)
     else:
-        A = np.argmax(Q[state])
+        A = np.argmax(Q[state][:nA])
     return A
 
-def Tsoftmax_policy(Q, T, state, nA):
-    ex = np.exp(Q[state]/T+1e-7)
+def softmax_sampling_policy(Q, T, state, nA):
+    ex = np.exp(Q[state][:nA]/T+1e-7)
     prob = ex/np.sum(ex)
     A = np.random.choice(nA, p=prob)
     return A
-
 
 def tabular_sarsa(env, num_episodes, discount=1, epsilon=0.1, alpha=0.5, eval_interval=1000):
     # Q = np.zeros([env.observation_space.n,env.action_space.n])
