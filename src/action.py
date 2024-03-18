@@ -2,12 +2,10 @@ from dataclasses import dataclass
 import enum
 
 
-class ActionType(enum.Enum):
-    NONE = 0
-    YUN = 1
-    DEFENCE = 2
-    ATTACK = 3
-    # ABSORB = 4
+class ActionType(enum.IntEnum):
+    YUN = 0
+    DEFENCE = 1
+    ATTACK = 2
 
 
 @dataclass
