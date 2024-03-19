@@ -16,9 +16,8 @@ if __name__=="__main__":
     parser.add_argument('--seed', type=int, help="set seed", default=None)
     parser.add_argument('--run', action='store_true', help="run example match with lastest moddel")
     parser.add_argument('-r', action='store_true', help="start match with random initial states")
-    parser.add_argument('-T', type=float, help="set softmax temperature coeeficient T", default=0.5)
+    parser.add_argument('-T', type=float, help="set softmax temperature coeeficient T", default=0.3)
     parser.add_argument('--stats', action='store_true', help="run state analysis")
-    parser.add_argument('-s', type=str, help="set state to view saperated by a comma ex. 1,1")
     parser.add_argument('--tour', action='store_true', help="run tournament")
     parser.add_argument('--tsize', type=int, help="number of models in tournament")
 
@@ -53,57 +52,45 @@ if __name__=="__main__":
                 break
 
     if args.stats:
-        # some analysis at a particular state
+        # some analysis at particular states
         T = args.T
-        S1,S2 = 1,1
-        Q1, Q2 = Qh[0], Qh[1]
-        if args.s is not None:
-            S1,S2 = [int(x) for x in args.s.split(",")]
-        print("stats @ ({},{})".format(S1,S2))
-
-        Sa = S1 * (env.rule.n_max_energy+1) + S2
-        Sb = S2 * (env.rule.n_max_energy+1) + S1
-
-        print("V1(({},{}),a)={}, argmax={}".format(S1,S2,Q1[Sa],Q1[Sa].argmax()))
-        print("V2(({},{}),a)={}, argmax={}".format(S2,S1,Q2[Sb],Q2[Sb].argmax()))
-
+        grid_size = 4
+        
         # instance stats
-        fig, axs = plt.subplots(2,2,figsize=(8,8))
-        ax = axs[0]
-        ax[0].plot(np.arange(Qh.shape[-1]),Q1[Sa])
-        ax[0].plot(np.arange(Qh.shape[-1]),Q2[Sb])
-        ax[0].set_title("Respective State-action Value at S=({},{})".format(S1,S2))
-        ax[0].set_xlabel("A")
-        ax[0].set_ylabel("R(S,A)")
-        ax[0].grid()
-        ax[0].legend(["P1","P2"])
-        ax[1].plot(np.arange(Qh.shape[-1]),softmax(Q1[Sa],T=T))
-        ax[1].plot(np.arange(Qh.shape[-1]),softmax(Q2[Sb],T=T))
-        ax[1].set_xlabel("A")
-        ax[1].set_ylabel("P(A)")
-        ax[1].set_title("Respective Softmax @ T={}".format(T))
-        ax[1].grid()
-        ax[1].legend(["P1","P2"])
-        ax[1].set_ylim((0, None))
+        fig, axs = plt.subplots(grid_size,grid_size,figsize=(10,10))
+        fig.suptitle("Model state-action value at varying states & softmax @ T={}".format(T))
+        Q = Qh[0]
+        for S1 in range(grid_size):
+            for S2 in range(grid_size):
+                S = S1 * (env.rule.n_max_energy+1) + S2
+                ax2 = axs[S1,S2].twinx()
+                ax2.bar(np.arange(Qh.shape[-1]),softmax(Q[S],T=T),color='tab:red',alpha=0.3)
+                ax2.tick_params(axis='y', labelcolor='tab:red')
+                ax2.set_ylabel("softmax", color='tab:red')
+                axs[S1,S2].plot(np.arange(Qh.shape[-1]),Q[S],color='tab:blue')
+                axs[S1,S2].set_title("S=({},{})".format(S1,S2))
+                axs[S1,S2].set_xticks(np.arange(Qh.shape[-1])+1,np.arange(Qh.shape[-1]))
+                axs[S1,S2].set_xlabel("A")
+                axs[S1,S2].tick_params(axis='y', labelcolor='tab:blue')
+                axs[S1,S2].set_ylabel("Q(S,A)", color='tab:blue')
+                axs[S1,S2].grid()
 
-        # bank stats
-        ax = axs[1]
-
-        ax[0].boxplot(Qh[:,Sa])
-        np.tile(np.arange(Qh.shape[-1]), (Qh.shape[0], 1))
-        ax[0].set_title("Bank State-action Value at S=({},{})".format(S1,S2))
-        ax[0].set_xticks(np.arange(Qh.shape[-1])+1,np.arange(Qh.shape[-1]))
-        ax[0].set_xlabel("A")
-        ax[0].set_ylabel("R(S,A)")
-        ax[0].grid()
-        ax[1].boxplot(softmax(Qh[:,Sa],T=T))
-        ax[1].set_xlabel("A")
-        ax[1].set_ylabel("P(A)")
-        ax[1].set_title("Bank Softmax @ T={}".format(T))
-        ax[1].grid()
-        ax[1].set_ylim((0, None))
         fig.tight_layout()
 
+        # state-action value grid
+        
+        fig, axs = plt.subplots(grid_size,grid_size,figsize=(10,10))
+        fig.suptitle("Bank state-action value at varying states")
+        for S1 in range(grid_size):
+            for S2 in range(grid_size):
+                S = S1 * (env.rule.n_max_energy+1) + S2
+                axs[S1,S2].boxplot(Qh[:,S])
+                axs[S1,S2].set_title("S=({},{})".format(S1,S2))
+                axs[S1,S2].set_xticks(np.arange(Qh.shape[-1])+1,np.arange(Qh.shape[-1]))
+                axs[S1,S2].set_xlabel("A")
+                axs[S1,S2].set_ylabel("Q(S,A)")
+                axs[S1,S2].grid()
+        fig.tight_layout()
         plt.show()
 
     if args.tour:
@@ -154,7 +141,7 @@ if __name__=="__main__":
         R/=num_matches_per_pair
         tot=R.sum(1,keepdims=True)/NP
         R = np.concatenate([R,tot],1)
-        fig, ax = plt.subplots(figsize=(10,10))
+        fig, ax = plt.subplots(figsize=(8,8))
         im = ax.imshow(-R, cmap = "RdBu_r")
         ax.set_title("Tounament result")
         ax.set_xticks(np.arange(NP+1),list(range(NP))+["Total"])
@@ -171,8 +158,8 @@ if __name__=="__main__":
         state_freq = state_freq[:ns**2]/state_freq.sum()
         state_freq = state_freq.reshape(ns,ns)
 
-        fig, ax = plt.subplots(figsize=(10,10))
-        im = ax.imshow(state_freq, cmap = "RdBu_r")
+        fig, ax = plt.subplots(figsize=(6,6))
+        im = ax.imshow(state_freq, cmap = "Reds")
         ax.set_title("State visit frequency")
         ax.set_xticks(np.arange(ns),np.arange(ns))
         ax.set_xlabel("S2")
@@ -188,8 +175,8 @@ if __name__=="__main__":
         win_last_state_freq = win_last_state_freq[:ns**2]/win_last_state_freq.sum()
         win_last_state_freq = win_last_state_freq.reshape(ns,ns)
 
-        fig, ax = plt.subplots(figsize=(10,10))
-        im = ax.imshow(win_last_state_freq, cmap = "RdBu_r")
+        fig, ax = plt.subplots(figsize=(6,6))
+        im = ax.imshow(win_last_state_freq, cmap = "Reds")
         ax.set_title("Winner last state frequency")
         ax.set_xticks(np.arange(ns),np.arange(ns))
         ax.set_xlabel("S2")
