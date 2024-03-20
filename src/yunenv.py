@@ -8,11 +8,11 @@ from gymnasium import spaces
 from sarsa import SarsaAgent
 
 class Rule(object):
-    def __init__(self) -> None:
-            self.n_max_energy = 5
-            self.level = 3
+    def __init__(self, n_max_energy=5, level=3, init_energy=1) -> None:
+            self.n_max_energy = n_max_energy
+            self.level = level
             self.n_max_actions = 1 + self.level*2 # 1 yun + n attack + n defense
-            self.init_energy = 1
+            self.init_energy = init_energy
 
             # some stats for analysis/debugging etc.
             self.num_matches = 0 # number of matches since initialization
@@ -120,6 +120,11 @@ class YunEnv(gym.Env):
         self.render_mode = render_mode
 
         self.max_episode_steps = max_episode_steps
+
+    @staticmethod
+    def convert_obs(S1,S2,rule):
+        n = rule.n_max_energy + 1 
+        return min(S1,rule.n_max_energy) * n + min(S2,rule.n_max_energy)
 
     def _get_obs(self):
         # agent's observation as a int

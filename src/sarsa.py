@@ -13,7 +13,9 @@ class SarsaAgent(object):
         self.mode = mode
         self.name = name
         self.thresh = thresh
-    def step(self, state, nA):
+    def step(self, state, nA=None):
+        if nA is None:
+            nA = self.Q[state].shape[-1]
         if self.Q is None:
             A = np.random.randint(0,nA)
         else:
