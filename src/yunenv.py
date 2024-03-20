@@ -161,8 +161,8 @@ class YunEnv(gym.Env):
 
         # initialize players' energy
         if self.train:
-            self._agent_state = np.random.randint(0,5)
-            self._opponent_state = np.random.randint(0,5)
+            self._agent_state = np.random.randint(0,self.N)
+            self._opponent_state = np.random.randint(0,self.N)
         else:
             self._agent_state = self.rule.init_energy
             self._opponent_state = self.rule.init_energy
@@ -196,9 +196,9 @@ class YunEnv(gym.Env):
         if self._game_state==2:
             reward = 1
         elif self._game_state==1:
-            reward = -1
+            reward = -1 # binary reward
         else:
-            reward = -0.02 # time penalty
+            reward = 0 # time penalty
 
         observation = self._get_obs()
         info = self._get_info()
@@ -211,18 +211,6 @@ class YunEnv(gym.Env):
 
 
         return observation, reward, terminated, truncated, info
-
-    def close(self):
-        # clean memory if needed
-        pass
-
-    def render(self):
-        if self.render_mode == "human":
-            return self._render_frame()
-
-    def _render_frame(self):
-        #TODO: render something on screen to monitor wtf is going on
-        pass
 
 def test():
 

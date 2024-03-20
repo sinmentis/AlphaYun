@@ -9,7 +9,7 @@ import argparse, random, time
 from tqdm import tqdm
 
 def selfplay(env, num_steps = 1000000, swap_steps=1000, bank_size=10, 
-             play_against_latest_ratio=0.7, save_steps=50000, eps=0.1, T=0.3, alpha=0.01):
+             play_against_latest_ratio=0.7, save_steps=50000, eps=0.1, T=0.3, alpha=0.01, sampling_method='softmax'):
     Qs = [None]
     Q_history = []
     Q = None
@@ -23,12 +23,12 @@ def selfplay(env, num_steps = 1000000, swap_steps=1000, bank_size=10,
                 opponent_Q = Qs[0]
             else:
                 opponent_Q = random.choice(Qs[1:])
-            env.reset(opponent = SarsaAgent(opponent_Q, T=T))
+            env.reset(opponent = SarsaAgent(opponent_Q, T=T, mode=sampling_method))
             Q = tabular_sarsa(env, swap_steps, Q, discount=1.0, epsilon=eps, alpha=alpha, eval_interval=-1)
         Qs = [np.copy(Q)] + Qs
         Qs = Qs[:bank_size]
         Q_history.append(np.copy(Q))
-    return np.array(Q_history)[::-1][:bank_size]
+    return np.array(Q_history)[::-1]
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
@@ -38,9 +38,12 @@ if __name__=="__main__":
     parser.add_argument('--num_steps', type=int, help="number of total training steps", default=1e7)
     parser.add_argument('--save_steps', type=int, help="number of training steps for each saved model", default=1e5)
     parser.add_argument('--swap_steps', type=int, help="number of training steps against each opponent", default=1e3)
-    parser.add_argument('--step_size', type=int, help="hyperparameter alpha", default=2e-2)
-    parser.add_argument('--T', type=float, help="hyperparameter T", default=0.3)
-    parser.add_argument('--eps', type=float, help="hyperparameter epsilon", default=0.1)
+    parser.add_argument('--play_against_latest_ratio', type=int, help="play against latest model ratio", default=0.9)
+
+    parser.add_argument('--step_size', type=int, help="learning rate alpha", default=5e-3)
+    parser.add_argument('--sampling_method', type=str, help="proportional or softmax", default='proportional')
+    parser.add_argument('--T', type=float, help="hyperparameter T for softmax sampling method", default=1)
+    parser.add_argument('--eps', type=float, help="hyperparameter epsilon for epsilon greedy policy", default=0.1)
 
     args = parser.parse_args()
     
@@ -50,7 +53,7 @@ if __name__=="__main__":
     print("running with seed", args.seed)
     env = YunEnv()
 
-    args.play_against_latest_ratio = 1/args.bank_size
+    args.play_against_latest_ratio = args.play_against_latest_ratio
     print("args:",args)
 
     print("Training...")

@@ -6,22 +6,29 @@ import numpy as np
 import itertools
 
 class SarsaAgent(object):
-    def __init__(self, Q, T=0.25, eps=0.1, mode='softmax', name="p1"):
+    def __init__(self, Q, T=1, eps=0.1, mode='softmax', thresh=-1e7, name="p1"):
         self.Q = Q
         self.T = T
         self.eps = eps
         self.mode = mode
         self.name = name
+        self.thresh = thresh
     def step(self, state, nA):
         if self.Q is None:
             A = np.random.randint(0,nA)
         else:
-            if self.mode=='softmax':
-                A = softmax_sampling_policy(self.Q, self.T, state, nA)
+            if self.mode=='proportional':
+                A = proportional_policy(self.Q, state, nA, thresh=self.thresh)
+            elif self.mode=='softmax':
+                A = softmax_sampling_policy(self.Q, self.T, state, nA, thresh=self.thresh)
             elif self.mode=='argmax':
                 A = epsilon_greedy_policy(self.Q, 0, state, nA)
-            else:
+            elif self.mode=='eps_greedy':
                 A = epsilon_greedy_policy(self.Q, self.eps, state, nA)
+            elif self.mode=='threshed_uniform':
+                A = threshed_uniform_policy(self.Q, state, nA, thresh=self.thresh)
+            else:
+                raise NotImplementedError(f"{self.mode} not implemented")
         return A
 
 def epsilon_greedy_policy(Q, epsilon, state, nA):
@@ -31,13 +38,38 @@ def epsilon_greedy_policy(Q, epsilon, state, nA):
         A = np.argmax(Q[state][:nA])
     return A
 
+def proportional_policy(Q, state, nA, thresh=0.02, min=-1, max=1, output_p=False):
+    q = Q[state][:nA]
+    p = (q-min)/(max-min)
+    p[p<thresh]=0
+    p/=p.sum()
+    A = np.random.choice(nA, p=p)
+    if output_p:
+        return p
+    return A
+
+def threshed_uniform_policy(Q, state, nA, thresh=0.02, output_p=False):
+    q = Q[state][:nA]
+    p=np.ones_like(q)
+    p[q<thresh]=0
+    p/=p.sum()
+    A = np.random.choice(nA, p=p)
+    if output_p:
+        return p
+    return A
+
 def softmax(logp,T=1):
     ex = np.exp(logp/T+1e-7)
     prob = ex/np.sum(ex)
     return prob
 
-def softmax_sampling_policy(Q, T, state, nA):
-    A = np.random.choice(nA, p=softmax(Q[state][:nA],T))
+def softmax_sampling_policy(Q, T, state, nA, thresh=-0.98, output_p=False):
+    q = np.copy(Q[state][:nA])
+    q[q<thresh]=-np.inf
+    p = softmax(q ,T)
+    A = np.random.choice(nA, p=p)
+    if output_p:
+        return p
     return A
 
 def tabular_sarsa(env, num_steps, Q=None, discount=1, epsilon=0.1, alpha=0.5, eval_interval=1000):
