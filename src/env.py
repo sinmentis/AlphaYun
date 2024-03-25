@@ -5,7 +5,7 @@ rlsn 2024
 import numpy as np
 import gymnasium as gym ### pip install gymnasium
 from gymnasium import spaces
-from sarsa import SarsaAgent
+from agent import Agent
 
 class Rule(object):
     def __init__(self, n_max_energy=5, level=3, init_energy=1) -> None:
@@ -145,9 +145,13 @@ class RPSEnv(gym.Env):
         if d%3==1:
             self._game_state=1
             reward = 1
+            if self._agent_action==1:
+                reward = 2
         elif d%3==2:
             self._game_state=2
             reward = -1
+            if self._opponent_action==1:
+                reward = -2
         else:
             self._game_state=0
             reward = 0
@@ -165,7 +169,7 @@ class RPSEnv(gym.Env):
 class YunEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 4}
 
-    def __init__(self, render_mode=None, rule=None, max_episode_steps=100):
+    def __init__(self, render_mode=None, rule=None, max_episode_steps=20):
         if rule is None:
             rule = Rule()
         self.rule = rule  # The rule or anything informative of the game
@@ -271,7 +275,10 @@ class YunEnv(gym.Env):
         elif self._game_state==1:
             reward = -1 # binary reward
         else:
-            reward = 0 # time penalty
+            if self.train:
+                reward = -0.05 # time penalty
+            else:
+                reward = 0
 
         observation = self._get_obs()
         info = self._get_info()
@@ -294,8 +301,8 @@ def test():
     print(env.observation_space.n)
     print(env.action_space.n)
 
-    opponent = SarsaAgent(np.random.randn(env.observation_space.n,env.action_space.n))
-    agent = SarsaAgent(np.random.randn(env.observation_space.n,env.action_space.n))
+    opponent = Agent(np.random.randn(env.observation_space.n,env.action_space.n))
+    agent = Agent(np.random.randn(env.observation_space.n,env.action_space.n))
     observation, info = env.reset(seed=None, opponent=None)
     print(0, info)
     for i in range(1,10):

@@ -5,8 +5,8 @@ rlsn 2024
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import numpy as np
-from yunenv import YunEnv
-from sarsa import SarsaAgent, softmax_sampling_policy, proportional_policy, threshed_uniform_policy
+from env import YunEnv
+from agent import Agent, softmax_sampling_policy, proportional_policy, threshed_uniform_policy
 import argparse, time, itertools
 
 def thresh(method):
@@ -31,10 +31,9 @@ if __name__=="__main__":
     parser.add_argument('--stats', action='store_true', help="run state analysis")
     parser.add_argument('-s', type=int, help="grid size of the stats to display", default=3)
     parser.add_argument('--tour', action='store_true', help="run tournament")
-    parser.add_argument('--tsize', type=int, help="number of models in tournament")
-    parser.add_argument('--sampling_method', type=str, help="sampling method for agent", default='softmax')
+    parser.add_argument('--tsize', type=int, help="number of models in tournament", default=10000)
+    parser.add_argument('--sampling_method', type=str, help="sampling method for opponent", default='argmax')
     parser.add_argument('--selfplay', action='store_true', help="run self play")
-    parser.add_argument('--selfplay_sampling_method', type=str, help="sampling method for opponent in self play", default='argmax')
 
     args = parser.parse_args()
     if args.seed:
@@ -46,13 +45,16 @@ if __name__=="__main__":
 
     env = YunEnv()
 
-    Qh = np.load(args.model_file)
+    model = np.load(args.model_file,allow_pickle=True).item()
+    Qh,Pih = model.get('Q'),model.get('PI')
     print("model loaded from {}, size {}".format(args.model_file, Qh.shape))
 
     if args.run:
         T = args.T
-        P1 = SarsaAgent(Qh[0], T=T, name='p1', mode=args.sampling_method, thresh=thresh(args.sampling_method))
-        P2 = SarsaAgent(Qh[0], T=T, name='p2', mode=args.selfplay_sampling_method, thresh=thresh(args.selfplay_sampling_method))
+        P1 = Agent(Pih[0], name='p1', mode="prob")
+        # P2 = Agent(Pih[0], name='p2', mode="prob")
+
+        P2 = Agent(Qh[0], T=T, name='p2', mode=args.sampling_method, thresh=thresh(args.sampling_method))
         
         observation, info = env.reset(seed=None, opponent=P2, train=args.r)
         print("Example match:")
@@ -66,56 +68,12 @@ if __name__=="__main__":
 
     if args.stats:
         # some analysis at particular states
-        T = args.T
+        Na = env.action_space.n
         grid_size = args.s
-        bank_size = 20
+        bank_size = 5
         action_labels = ["C","A1","A2","A3","D1","D2","D3"]
-        # instance stats
-        fig, axs = plt.subplots(grid_size,grid_size,figsize=(10,10))
-        fig.suptitle(f"Model state-action value (dot) & sampling prob (bar) by proportional(blue) & softmax(red) @ T={T}")
-        Q = Qh[0]
-        Na = Qh.shape[-1]
-        for S1 in range(grid_size):
-            for S2 in range(grid_size):
-                S = S1 * (env.rule.n_max_energy+1) + S2
-                ax2 = axs[S1,S2].twinx()
-                # uniform_p = threshed_uniform_policy(Q, S, Q[S].shape[0], thresh=thresh('threshed_uniform'), output_p=True)
-                # ax2.plot(np.arange(Na),Na*[uniform_p.max()], color="black",alpha=0.25)
-                ax2.bar(np.arange(Na),softmax_sampling_policy(Q, T, S, Q[S].shape[0], thresh=thresh('softmax'), output_p=True),
-                        color='tab:red',label="sm",alpha=0.25)
-                ax2.bar(np.arange(Na),proportional_policy(Q, S, Q[S].shape[0], thresh=thresh('proportional'), output_p=True),
-                        color='tab:blue',label="p",alpha=0.25)
-                # ax2.bar(np.arange(Na),threshed_uniform_policy(Q, S, Q[S].shape[0], thresh=thresh('threshed_uniform'), output_p=True),
-                #         color='tab:green',label="p",alpha=0.25)
-                axs[S1,S2].plot(np.arange(Na),Q[S],color='C1',linestyle='None',marker='o')
-                # axs[S1,S2].bar(np.arange(Na),Q[S],color='C1', width=0.1)
-                
-                axs[S1,S2].text(3, 0, f"({S1},{S2})",
-                            ha="center", va="center", color="black", alpha=0.15, fontsize=20, weight='bold')
-                axs[S1,S2].set_xticks(np.arange(Na),action_labels)
-                axs[S1,S2].tick_params(axis='y', labelcolor='C1')
-                axs[S1,S2].set_ylim(-1, 1)
-                ax2.set_ylim(0, 1)
-                axs[S1,S2].grid()
-                if S1==grid_size-1:
-                    axs[S1,S2].set_xlabel("A")
-                else:
-                    axs[S1,S2].xaxis.set_ticklabels([])
-                if S2==0:
-                    axs[S1,S2].set_ylabel("Q(S,A)", color='C1')
-                    ax2.yaxis.set_ticklabels([])
-                elif S2==grid_size-1:
-                    ax2.tick_params(axis='y', labelcolor='tab:purple')
-                    ax2.set_ylabel("Prob", color='tab:purple')
-                    axs[S1,S2].yaxis.set_ticklabels([])
-                else:
-                    axs[S1,S2].yaxis.set_ticklabels([])
-                    ax2.yaxis.set_ticklabels([])
-                
-        fig.tight_layout()
 
         # state-action value grid
-        
         fig, axs = plt.subplots(grid_size,grid_size,figsize=(10,10))
         fig.suptitle("Bank state-action value (box) & best response (bar) @ appox. Nash Equilibrium")
         for S1 in range(grid_size):
@@ -125,18 +83,12 @@ if __name__=="__main__":
                 axs[S1,S2].text(4, 0, f"({S1},{S2})",
                             ha="center", va="center", color="black", alpha=0.15, fontsize=20, weight='bold')
                 axs[S1,S2].set_xticks(np.arange(Qh.shape[-1])+1,action_labels)
-                axs[S1,S2].set_ylim(-1, 1) 
+                axs[S1,S2].set_ylim(-1.05, 1.05) 
                 axs[S1,S2].grid()
 
                 ax2 = axs[S1,S2].twinx()
-                if args.sampling_method == 'softmax':
-                    p = [softmax_sampling_policy(Qh[:bank_size][i], T, S, Q[S].shape[0],thresh=thresh('softmax'), output_p=True) for i in range(bank_size)]
-                else:
-                    p = [proportional_policy(Qh[:bank_size][i], S, Q[S].shape[0], thresh=thresh('proportional'), output_p=True) for i in range(bank_size)]
-                p=np.array(p)
-
+                p=Pih[:bank_size,S]/Pih[:bank_size,S].sum(-1,keepdims=True)
                 ax2.bar(np.arange(Na)+1,p.mean(0),yerr=p.std(0), color='tab:blue',label="sm",alpha=0.25)
-                # ax2.bar(np.arange(Na)+1,proportional_policy(Qh[:bank_size].mean(0), S, Q[S].shape[0], thresh=thresh('proportional'), output_p=True), color='tab:blue',label="p",alpha=0.25)
                 
                 ax2.set_ylim(0, 1)
                 if S1==grid_size-1:
@@ -164,9 +116,9 @@ if __name__=="__main__":
         num_models = 20
         random_start = args.r
 
-        Qi = Qh[::Qh.shape[0]//num_models][::-1]
+        pi = Pih[::Pih.shape[0]//num_models][::-1]
 
-        NP = Qi.shape[0]
+        NP = pi.shape[0]
         R = np.zeros([NP,NP])
         ns = env.rule.n_max_energy + 1
         state_freq = np.zeros(env.observation_space.n)
@@ -185,8 +137,8 @@ if __name__=="__main__":
                 Lk = []
                 for k in range(num_matches_per_pair):
                     
-                    P1 = SarsaAgent(Qi[i], T=T, mode=args.sampling_method, thresh=thresh(args.sampling_method))
-                    P2 = SarsaAgent(Qi[j], T=T, mode=args.sampling_method, thresh=thresh(args.sampling_method))
+                    P1 = Agent(pi[i], T=T, mode='prob')
+                    P2 = Agent(pi[j], T=T, mode='prob')
 
                     observation, info = env.reset(opponent=P2, train=random_start)
                     Lt = [info]
@@ -285,11 +237,11 @@ if __name__=="__main__":
         plt.show()
 
     if args.selfplay:
-        N = 1e5
+        N = args.tsize
         print(f"running selfplay {int(N)} times")
-        print(f"sampling methods: P1: {args.sampling_method}, P2: {args.selfplay_sampling_method}")
-        P1 = SarsaAgent(Qh[0], T=args.T, mode=args.sampling_method, thresh=thresh(args.sampling_method))
-        P2 = SarsaAgent(Qh[0], T=args.T, mode=args.selfplay_sampling_method, thresh=thresh(args.selfplay_sampling_method))
+        print(f"best response vs sampling methods: {args.sampling_method}")
+        P1 = Agent(Pih[0], T=args.T, mode='prob')
+        P2 = Agent(Qh[0], T=args.T, mode=args.sampling_method, thresh=thresh(args.sampling_method))
         rewards = []
         length = []
         ns = env.rule.n_max_energy + 1

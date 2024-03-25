@@ -5,8 +5,8 @@ rlsn 2024
 import numpy as np
 import itertools
 
-class SarsaAgent(object):
-    def __init__(self, Q, T=1, eps=0.1, mode='softmax', thresh=-1e7, name="p1"):
+class Agent(object):
+    def __init__(self, Q, T=1, eps=0.1, mode='prob', thresh=-1e7, name="p1"):
         self.Q = Q
         self.T = T
         self.eps = eps
@@ -21,6 +21,11 @@ class SarsaAgent(object):
         else:
             if self.mode=='proportional':
                 A = proportional_policy(self.Q, state, nA, thresh=self.thresh)
+            elif self.mode=='prob':
+                if self.Q[state].sum()>0:
+                    A = np.random.choice(nA, p=self.Q[state])
+                else:
+                    A = np.random.choice(nA)
             elif self.mode=='softmax':
                 A = softmax_sampling_policy(self.Q, self.T, state, nA, thresh=self.thresh)
             elif self.mode=='argmax':
@@ -74,6 +79,46 @@ def softmax_sampling_policy(Q, T, state, nA, thresh=-0.98, output_p=False):
     A = np.random.choice(nA, p=p)
     return A
 
+
+def tabular_Q(env, num_steps, Q=None, discount=1, epsilon=0.1, alpha=0.5, eval_interval=1000, n_ternimal=1):
+    if Q is None:
+        Q = np.random.randn(env.observation_space.n,env.action_space.n)*1e-2
+        Q[-n_ternimal:] = 0 # terminal states to 0
+    i_steps = 0
+    acc_return = 0
+    acc_length = 0
+    for i_episode in itertools.count():
+        if i_steps > num_steps:
+            break
+
+        if eval_interval>0 and i_episode % eval_interval == 0:
+            print("Step {}/{}, Episode {}, avg return = {}, avg length = {}".format(i_steps, num_steps, i_episode, acc_return/eval_interval, acc_length/eval_interval))
+
+            acc_return = 0
+            acc_length = 0
+
+        G = 0
+        state, info = env.reset()
+
+        for t in itertools.count():
+            i_steps += 1
+
+            action = epsilon_greedy_policy(Q, epsilon, state, env.action_space.n)
+
+            next_state, reward, terminated, truncated, _ = env.step(action)
+
+
+            Q[state, action] += alpha*(reward + discount*Q[next_state].max()-Q[state, action])
+            state = next_state
+
+            G = discount*G + reward
+            if terminated or truncated:
+                acc_length+=t
+                acc_return+=G
+                break
+                
+    return Q  
+
 def tabular_sarsa(env, num_steps, Q=None, discount=1, epsilon=0.1, T=1, sampling_method='proportional',eta=1, alpha=0.5, eval_interval=1000, n_ternimal=1):
     if Q is None:
         # Q = np.zeros([env.observation_space.n,env.action_space.n])
@@ -97,9 +142,9 @@ def tabular_sarsa(env, num_steps, Q=None, discount=1, epsilon=0.1, T=1, sampling
         state, info = env.reset()
         
         if np.random.rand()<eta:
-            agent = SarsaAgent(Q, T=T, eps=epsilon, mode="eps_greedy")
+            agent = Agent(Q, T=T, eps=epsilon, mode="eps_greedy")
         else:
-            agent = SarsaAgent(Q, T=T, eps=epsilon, mode=sampling_method)
+            agent = Agent(Q, T=T, eps=epsilon, mode=sampling_method)
         action = agent.step(state, env.action_space.n)
         # action=epsilon_greedy_policy(Q, epsilon, state, env.action_space.n)
         for t in itertools.count():
@@ -121,59 +166,6 @@ def tabular_sarsa(env, num_steps, Q=None, discount=1, epsilon=0.1, T=1, sampling
                 
     return Q    
 
-def tabular_sarsa_lambda(env, num_steps, Q=None, discount=1, epsilon=0.1, alpha=0.5, lbda=0.8, eval_interval=1000):
-    if Q is None:
-        # Q = np.zeros([env.observation_space.n,env.action_space.n])
-        Q = np.random.randn(env.observation_space.n,env.action_space.n)*1e-2
-        Q[-1] = 0
-    Q = np.random.randn(env.observation_space.n,env.action_space.n)*1e-2
-    Q[-1] = 0
-
-    i_steps = 0
-    acc_return = 0
-    acc_length = 0
-    for i_episode in itertools.count():
-        
-        if i_steps > num_steps:
-            break        
-
-
-        if eval_interval>0 and i_episode % eval_interval == 0:
-            print("Step {}/{}, Episode {}, avg return = {}, avg length = {}".format(i_steps, num_steps, i_episode, acc_return/eval_interval, acc_length/eval_interval))
-
-            acc_return = 0
-            acc_length = 0
-
-        G = 0
-        E = np.zeros([env.observation_space.n,env.action_space.n])
-        state, info = env.reset()
-
-        action = epsilon_greedy_policy(Q, epsilon, state, env.action_space.n)
-        
-        for t in itertools.count():
-            i_steps += 1
-            next_state, reward, terminated, truncated, _ = env.step(action)
-
-            next_action = epsilon_greedy_policy(Q, epsilon, next_state, env.action_space.n)
-            
-            delta = reward + discount*Q[next_state,next_action] - Q[state,action]
-            E[state,action] += 1 # accumulating traces
-            G = discount*G + reward 
-            for s in range(Q.shape[0]):
-                for a in range(Q.shape[1]):
-                    Q[s,a] += alpha*delta*E[s,a]
-                    E[s,a] = discount*lbda*E[s,a]
-                    
-            state = next_state
-            action = next_action
-
-            if terminated or truncated:
-                acc_length+=t
-                acc_return+=G
-                break
-                            
-    return Q
-
 def test():
     import gymnasium as gym
     # env = gym.make('FrozenLake-v1', desc=None, map_name="4x4", is_slippery=False, max_episode_steps=50)
@@ -184,14 +176,15 @@ def test():
     train = 1
     if train:
         num_steps = 2000000
-        Q = tabular_sarsa(env, num_steps, discount=1.0, epsilon=0.1, alpha=0.5, eval_interval=10000,n_ternimal=1)
+        # Q = tabular_sarsa(env, num_steps, discount=1.0, epsilon=0.1, alpha=0.5, eval_interval=10000,n_ternimal=1)
+        Q = tabular_Q(env, num_steps, discount=1.0, epsilon=0.1, alpha=0.5, eval_interval=10000,n_ternimal=1)
+
         # Q = tabular_sarsa_lambda(env, num_steps, discount=1.0, epsilon=0.1, alpha=0.5, lbda=0.8, eval_interval=10000)
         np.save('Q.npy', Q)
             
     else:
         Q = np.load('Q.npy')
 
-    print(Q)
     # eval
     # env = gym.make('FrozenLake-v1', desc=None, map_name="4x4", is_slippery=False, render_mode="human")
     env = gym.make('CliffWalking-v0', max_episode_steps=50, render_mode="human")

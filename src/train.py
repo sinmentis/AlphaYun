@@ -2,50 +2,105 @@
 Script for model training
 rlsn 2024
 """
-from yunenv import YunEnv,RPSEnv
-from sarsa import SarsaAgent, tabular_sarsa
+from env import YunEnv,RPSEnv
+from agent import Agent, tabular_Q
 import numpy as np
-import argparse, random, time
+import argparse, random, time, itertools
 from tqdm import tqdm
 
-def selfplay(env, num_steps = 1000000, swap_steps=1000, bank_size=10, 
-             play_against_latest_ratio=0.7, save_steps=50000, eps=0.1, T=0.3, eta=1, alpha=0.01, sampling_method='softmax'):
-    Qs = [None]
-    Q_history = []
-    Q = None
-    env.reset(opponent = None, train=True)
+def generate_data(env, MSL, pi, beta, n, m, eta):
+    sigma = (1-eta)*pi+eta*beta
+    P_sigma = [Agent(sigma[i]) for i in range(pi.shape[0])]
+    D = np.zeros([1, env.observation_space.n,env.action_space.n])
+    for i in range(n):
+        p1 = np.random.choice(P_sigma)
+        p2 = np.random.choice(P_sigma)
+        state, info = env.reset(opponent=p2, train=True)
+        for t in itertools.count():
+            action = p1.step(state)
+            D[0, state, action]+=1
+            state, _, terminated, truncated, _ = env.step(action)
+            if terminated or truncated:
+                break
+    P_beta = [Agent(beta[i]) for i in range(pi.shape[0])]
+    for i in range(len(P_beta)):
+        p1 = P_beta[i]
+        ps = list(range(len(P_sigma)))
+        ps.remove(i)
+        for j in range(m):
+            p2 = P_sigma[np.random.choice(ps)]
+            state, info = env.reset(opponent=p2, train=True)
+            for t in itertools.count():
+                action = p1.step(state)
+                MSL[i, state, action]+=1
+                state, _, terminated, truncated, _ = env.step(action)
+                if terminated or truncated:
+                    break
+    return MSL+D, P_sigma
 
-    n_saves = int(num_steps/save_steps)
-    n_swaps_per_save = int(save_steps/swap_steps)
-    for i_saves in tqdm(range(n_saves), desc="Saves", position=0):
-        for i_swaps in tqdm(range(n_swaps_per_save), desc="Swaps", position=1, leave=False):
-            if len(Qs)==1 or np.random.randn() < play_against_latest_ratio:
-                opponent_Q = Qs[0]
-            else:
-                opponent_Q = random.choice(Qs[1:])
-            env.reset(opponent = SarsaAgent(opponent_Q, T=T, mode=sampling_method))
-            Q = tabular_sarsa(env, swap_steps, Q, discount=1.0, epsilon=eps, 
-            alpha=alpha, eval_interval=-1,eta=eta,T=T,sampling_method=sampling_method,n_ternimal=env.n_ternimal)
-        Qs = [np.copy(Q)] + Qs
-        Qs = Qs[:bank_size]
-        Q_history.append(np.copy(Q))
-    return np.array(Q_history)[::-1]
+def exploitability(beta,pi,Ne=200):
+    b1 = Agent(beta[0])
+    b2 = Agent(beta[1])
+    pi1 = Agent(pi[0])
+    pi2 = Agent(pi[1])
+    R = 0
+    for i in range(Ne):
+        state, info = env.reset(opponent=pi2, train=True)
+        for t in itertools.count():
+            action = b1.step(state)
+            state, r, terminated, truncated, _ = env.step(action)
+            if terminated or truncated:
+                R+=r
+                break
+        state, info = env.reset(opponent=pi1, train=True)
+        for t in itertools.count():
+            action = b2.step(state)
+            state, r, terminated, truncated, _ = env.step(action)
+            if terminated or truncated:
+                R+=r
+                break
+    return R/Ne/2
+
+def selfplay(env, num_iters=10, num_steps_per_iter = 20000, eps=0.1, alpha=0.01, num_players=2):
+    Q = np.random.randn(num_players, env.observation_space.n,env.action_space.n)*1e-2
+    Q[:,-env.n_ternimal:] = 0 # terminal states to 0
+    beta = np.zeros([num_players, env.observation_space.n,env.action_space.n])
+    pi = np.zeros([num_players, env.observation_space.n,env.action_space.n])
+    MSL = np.ones([num_players, env.observation_space.n,env.action_space.n])
+    num_swaps = 20
+    expl = 1
+    pbar = tqdm(range(1,num_iters+1), desc="Iter", position=0)
+    for niter in pbar:
+        eta = 1/niter
+        MSL, P_sigma = generate_data(env, MSL, pi, beta, n=100, m=100, eta=eta)
+        for n_pl in tqdm(range(num_players), desc="player", position=1, leave=False):
+            for n_sw in range(num_swaps):
+                ps = list(range(len(P_sigma)))
+                ps.remove(n_pl)
+                opponent = P_sigma[np.random.choice(ps)]
+                env.reset(opponent=opponent, train=True)
+                Q[n_pl] = tabular_Q(env, num_steps_per_iter//num_swaps, Q=Q[n_pl], epsilon=eps, alpha=alpha, eval_interval=-1)
+                beta[n_pl]*=0
+            for s in range(beta.shape[1]):
+                beta[n_pl,s,Q[n_pl,s].argmax()]=1
+
+        pi = MSL/np.sum(MSL,axis=-1,keepdims=True)
+        expl = exploitability(beta,pi)
+        pbar.set_description(f"expl={round(expl,2)}|Iter")
+        pbar.refresh() # to show immediately the update
+    return Q, pi
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, help="set seed", default=None)
     parser.add_argument('--model_file', type=str, help="filename of the model to be saved", default="Qh.npy")
-    parser.add_argument('--bank_size', type=int, help="bank size of the model", default=20)
     parser.add_argument('--num_steps', type=int, help="number of total training steps", default=1e7)
-    parser.add_argument('--save_steps', type=int, help="number of training steps for each saved model", default=1e5)
-    parser.add_argument('--swap_steps', type=int, help="number of training steps against each opponent", default=1e3)
-    parser.add_argument('--play_against_latest_ratio', type=int, help="play against latest model ratio", default=0.05)
+    parser.add_argument('--save_steps', type=int, help="number of training steps for each saved model", default=2e4)
 
-    parser.add_argument('--step_size', type=int, help="learning rate alpha", default=1e-2)
-    parser.add_argument('--sampling_method', type=str, help="proportional or softmax", default='softmax')
-    parser.add_argument('--T', type=float, help="hyperparameter T for softmax sampling method", default=0.2)
+    parser.add_argument('--step_size', type=int, help="learning rate alpha", default=0.1)
+    parser.add_argument('--memory_size', type=float, help="hyperparameter controls action memory size", default=3000)
     parser.add_argument('--eps', type=float, help="hyperparameter epsilon for epsilon greedy policy", default=0.1)
-    parser.add_argument('--eta', type=float, help="hyperparameter anticipatory parameter", default=0.1)
+    parser.add_argument('--eta', type=float, help="hyperparameter anticipatory parameter", default=0.3)
 
     args = parser.parse_args()
     
@@ -53,16 +108,15 @@ if __name__=="__main__":
         args.seed = int(time.time())
     np.random.seed(args.seed)
     print("running with seed", args.seed)
-    env = YunEnv()
-    # env = RPSEnv()
+    # env = YunEnv()
+    env = RPSEnv()
 
-    args.play_against_latest_ratio = args.play_against_latest_ratio
     print("args:",args)
 
     print("Training...")
     start = time.time()
-    Qh = selfplay(env, args.num_steps, args.swap_steps, args.bank_size, 
-                  args.play_against_latest_ratio, args.save_steps,
-                  eps=args.eps, T=args.T, alpha=args.step_size)
-    np.save(args.model_file, Qh)
+    Q,pi = selfplay(env, num_iters=100, num_steps_per_iter = 20000, eps=0.1, alpha=0.01, num_players=2)
+    np.save(args.model_file, {"Q":Q,"PI":pi})
+    print(pi[0])
+    print(Q[0])
     print("Training complete, model saved at {}, elapsed {}s".format(args.model_file,round(time.time()-start,2)))
