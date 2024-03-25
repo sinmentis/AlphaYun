@@ -27,14 +27,14 @@ if __name__=="__main__":
     parser.add_argument('--seed', type=int, help="set seed", default=None)
     parser.add_argument('--run', action='store_true', help="run example match with lastest moddel")
     parser.add_argument('-r', action='store_true', help="start match with random initial states")
-    parser.add_argument('-T', type=float, help="set softmax temperature coeeficient T", default=1.)
+    parser.add_argument('-T', type=float, help="set softmax temperature coeeficient T", default=0.2)
     parser.add_argument('--stats', action='store_true', help="run state analysis")
     parser.add_argument('-s', type=int, help="grid size of the stats to display", default=3)
     parser.add_argument('--tour', action='store_true', help="run tournament")
     parser.add_argument('--tsize', type=int, help="number of models in tournament")
-    parser.add_argument('--sampling_method', type=str, help="sampling method for agent", default='proportional')
+    parser.add_argument('--sampling_method', type=str, help="sampling method for agent", default='softmax')
     parser.add_argument('--selfplay', action='store_true', help="run self play")
-    parser.add_argument('--selfplay_sampling_method', type=str, help="sampling method for opponent in self play", default='threshed_uniform')
+    parser.add_argument('--selfplay_sampling_method', type=str, help="sampling method for opponent in self play", default='argmax')
 
     args = parser.parse_args()
     if args.seed:
@@ -68,7 +68,7 @@ if __name__=="__main__":
         # some analysis at particular states
         T = args.T
         grid_size = args.s
-        band_size = 20
+        bank_size = 20
         action_labels = ["C","A1","A2","A3","D1","D2","D3"]
         # instance stats
         fig, axs = plt.subplots(grid_size,grid_size,figsize=(10,10))
@@ -79,7 +79,7 @@ if __name__=="__main__":
             for S2 in range(grid_size):
                 S = S1 * (env.rule.n_max_energy+1) + S2
                 ax2 = axs[S1,S2].twinx()
-                uniform_p = threshed_uniform_policy(Q, S, Q[S].shape[0], thresh=thresh('threshed_uniform'), output_p=True)
+                # uniform_p = threshed_uniform_policy(Q, S, Q[S].shape[0], thresh=thresh('threshed_uniform'), output_p=True)
                 # ax2.plot(np.arange(Na),Na*[uniform_p.max()], color="black",alpha=0.25)
                 ax2.bar(np.arange(Na),softmax_sampling_policy(Q, T, S, Q[S].shape[0], thresh=thresh('softmax'), output_p=True),
                         color='tab:red',label="sm",alpha=0.25)
@@ -117,24 +117,43 @@ if __name__=="__main__":
         # state-action value grid
         
         fig, axs = plt.subplots(grid_size,grid_size,figsize=(10,10))
-        fig.suptitle("Bank state-action value Q(s,a) @ varying s")
+        fig.suptitle("Bank state-action value (box) & best response (bar) @ appox. Nash Equilibrium")
         for S1 in range(grid_size):
             for S2 in range(grid_size):
                 S = S1 * (env.rule.n_max_energy+1) + S2
-                axs[S1,S2].boxplot(Qh[:band_size,S])
+                axs[S1,S2].boxplot(Qh[:bank_size,S])
                 axs[S1,S2].text(4, 0, f"({S1},{S2})",
                             ha="center", va="center", color="black", alpha=0.15, fontsize=20, weight='bold')
                 axs[S1,S2].set_xticks(np.arange(Qh.shape[-1])+1,action_labels)
                 axs[S1,S2].set_ylim(-1, 1) 
                 axs[S1,S2].grid()
+
+                ax2 = axs[S1,S2].twinx()
+                if args.sampling_method == 'softmax':
+                    p = [softmax_sampling_policy(Qh[:bank_size][i], T, S, Q[S].shape[0],thresh=thresh('softmax'), output_p=True) for i in range(bank_size)]
+                else:
+                    p = [proportional_policy(Qh[:bank_size][i], S, Q[S].shape[0], thresh=thresh('proportional'), output_p=True) for i in range(bank_size)]
+                p=np.array(p)
+
+                ax2.bar(np.arange(Na)+1,p.mean(0),yerr=p.std(0), color='tab:blue',label="sm",alpha=0.25)
+                # ax2.bar(np.arange(Na)+1,proportional_policy(Qh[:bank_size].mean(0), S, Q[S].shape[0], thresh=thresh('proportional'), output_p=True), color='tab:blue',label="p",alpha=0.25)
+                
+                ax2.set_ylim(0, 1)
                 if S1==grid_size-1:
                     axs[S1,S2].set_xlabel("A")
                 else:
                     axs[S1,S2].xaxis.set_ticklabels([])
                 if S2==0:
                     axs[S1,S2].set_ylabel("Q(S,A)")
+                    ax2.yaxis.set_ticklabels([])
+                elif S2==grid_size-1:
+                    ax2.tick_params(axis='y', labelcolor='tab:blue')
+                    ax2.set_ylabel("Prob", color='tab:blue')
+                    axs[S1,S2].yaxis.set_ticklabels([])
                 else:
                     axs[S1,S2].yaxis.set_ticklabels([])
+                    ax2.yaxis.set_ticklabels([])
+
         fig.tight_layout()
         plt.show()
 
@@ -145,7 +164,7 @@ if __name__=="__main__":
         num_models = 20
         random_start = args.r
 
-        Qi = Qh[::Qh.shape[0]/num_models][::-1]
+        Qi = Qh[::Qh.shape[0]//num_models][::-1]
 
         NP = Qi.shape[0]
         R = np.zeros([NP,NP])

@@ -45,9 +45,9 @@ def proportional_policy(Q, state, nA, thresh=0.02, min=-1, max=1, output_p=False
     p = (q-min)/(max-min)
     p[p<thresh]=0
     p/=p.sum()
-    A = np.random.choice(nA, p=p)
     if output_p:
         return p
+    A = np.random.choice(nA, p=p)
     return A
 
 def threshed_uniform_policy(Q, state, nA, thresh=0.02, output_p=False):
@@ -62,24 +62,24 @@ def threshed_uniform_policy(Q, state, nA, thresh=0.02, output_p=False):
 
 def softmax(logp,T=1):
     ex = np.exp(logp/T+1e-7)
-    prob = ex/np.sum(ex)
+    prob = ex/np.sum(ex,-1)
     return prob
 
 def softmax_sampling_policy(Q, T, state, nA, thresh=-0.98, output_p=False):
     q = np.copy(Q[state][:nA])
     q[q<thresh]=-np.inf
     p = softmax(q ,T)
-    A = np.random.choice(nA, p=p)
     if output_p:
         return p
+    A = np.random.choice(nA, p=p)
     return A
 
-def tabular_sarsa(env, num_steps, Q=None, discount=1, epsilon=0.1, alpha=0.5, eval_interval=1000):
+def tabular_sarsa(env, num_steps, Q=None, discount=1, epsilon=0.1, T=1, sampling_method='proportional',eta=1, alpha=0.5, eval_interval=1000, n_ternimal=1):
     if Q is None:
         # Q = np.zeros([env.observation_space.n,env.action_space.n])
         Q = np.random.randn(env.observation_space.n,env.action_space.n)*1e-2
-        Q[-1] = 0
-
+        Q[-n_ternimal:] = 0 # terminal states to 0
+    
     i_steps = 0
     acc_return = 0
     acc_length = 0
@@ -95,12 +95,19 @@ def tabular_sarsa(env, num_steps, Q=None, discount=1, epsilon=0.1, alpha=0.5, ev
 
         G = 0
         state, info = env.reset()
-        action = epsilon_greedy_policy(Q, epsilon, state, env.action_space.n)
-
+        
+        if np.random.rand()<eta:
+            agent = SarsaAgent(Q, T=T, eps=epsilon, mode="eps_greedy")
+        else:
+            agent = SarsaAgent(Q, T=T, eps=epsilon, mode=sampling_method)
+        action = agent.step(state, env.action_space.n)
+        # action=epsilon_greedy_policy(Q, epsilon, state, env.action_space.n)
         for t in itertools.count():
             i_steps += 1
+            
             next_state, reward, terminated, truncated, _ = env.step(action)
-            next_action = epsilon_greedy_policy(Q, epsilon, next_state, env.action_space.n)
+            next_action = agent.step(next_state, env.action_space.n)
+            # next_action=epsilon_greedy_policy(Q, epsilon, next_state, env.action_space.n)
 
             Q[state, action] += alpha*(reward + discount*Q[next_state,next_action]-Q[state, action])
             state = next_state
@@ -177,7 +184,7 @@ def test():
     train = 1
     if train:
         num_steps = 2000000
-        Q = tabular_sarsa(env, num_steps, discount=1.0, epsilon=0.1, alpha=0.5, eval_interval=10000)
+        Q = tabular_sarsa(env, num_steps, discount=1.0, epsilon=0.1, alpha=0.5, eval_interval=10000,n_ternimal=1)
         # Q = tabular_sarsa_lambda(env, num_steps, discount=1.0, epsilon=0.1, alpha=0.5, lbda=0.8, eval_interval=10000)
         np.save('Q.npy', Q)
             
