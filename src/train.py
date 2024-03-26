@@ -3,91 +3,127 @@ Script for model training
 rlsn 2024
 """
 from env import YunEnv,RPSEnv
-from agent import Agent, tabular_Q
+from agent import Agent, tabular_Q, softmax
 import numpy as np
 import argparse, random, time, itertools
 from tqdm import tqdm
 
-def generate_data(env, MSL, pi, beta, n, m, eta):
-    sigma = (1-eta)*pi+eta*beta
-    P_sigma = [Agent(sigma[i]) for i in range(pi.shape[0])]
-    D = np.zeros([1, env.observation_space.n,env.action_space.n])
-    for i in range(n):
-        p1 = np.random.choice(P_sigma)
-        p2 = np.random.choice(P_sigma)
-        state, info = env.reset(opponent=p2, train=True)
-        for t in itertools.count():
-            action = p1.step(state)
-            D[0, state, action]+=1
-            state, _, terminated, truncated, _ = env.step(action)
-            if terminated or truncated:
-                break
-    P_beta = [Agent(beta[i]) for i in range(pi.shape[0])]
-    for i in range(len(P_beta)):
-        p1 = P_beta[i]
-        ps = list(range(len(P_sigma)))
-        ps.remove(i)
-        for j in range(m):
-            p2 = P_sigma[np.random.choice(ps)]
-            state, info = env.reset(opponent=p2, train=True)
-            for t in itertools.count():
-                action = p1.step(state)
-                MSL[i, state, action]+=1
-                state, _, terminated, truncated, _ = env.step(action)
-                if terminated or truncated:
-                    break
-    return MSL+D, P_sigma
 
-def exploitability(beta,pi,Ne=200):
+def exploitability(beta,pi,Ne=300):
     b1 = Agent(beta[0])
     b2 = Agent(beta[1])
     pi1 = Agent(pi[0])
     pi2 = Agent(pi[1])
-    R = 0
+    R1 = R2 = 0
     for i in range(Ne):
         state, info = env.reset(opponent=pi2, train=True)
         for t in itertools.count():
             action = b1.step(state)
             state, r, terminated, truncated, _ = env.step(action)
             if terminated or truncated:
-                R+=r
+                R1+=r
                 break
         state, info = env.reset(opponent=pi1, train=True)
         for t in itertools.count():
             action = b2.step(state)
             state, r, terminated, truncated, _ = env.step(action)
             if terminated or truncated:
-                R+=r
+                R2+=r
                 break
-    return R/Ne/2
+    return R1/Ne, R2/Ne
 
-def selfplay(env, num_iters=10, num_steps_per_iter = 20000, eps=0.1, alpha=0.01, num_players=2):
-    Q = np.random.randn(num_players, env.observation_space.n,env.action_space.n)*1e-2
-    Q[:,-env.n_ternimal:] = 0 # terminal states to 0
-    beta = np.zeros([num_players, env.observation_space.n,env.action_space.n])
-    pi = np.zeros([num_players, env.observation_space.n,env.action_space.n])
-    MSL = np.ones([num_players, env.observation_space.n,env.action_space.n])
-    num_swaps = 20
+def fictitious_selfplay(env, num_iters=1000, num_steps_per_iter = 20000, eps=0.1, alpha=0.1):
+    # Q = np.random.randn(env.observation_space.n,env.action_space.n)*1e-2
+    # Q[-env.n_ternimal:] = 0 # terminal states to 0
+    pi = np.ones([2,env.observation_space.n,env.action_space.n])
+    pi = np.random.rand(2,env.observation_space.n,env.action_space.n)
+
+    pi = pi/pi.sum(-1,keepdims=True)
+
+    # pi[0,0,0]=0.25
+    # pi[0,0,1]=0.25
+    # pi[0,0,2]=0.5
+
+    beta = np.copy(pi)
     expl = 1
     pbar = tqdm(range(1,num_iters+1), desc="Iter", position=0)
     for niter in pbar:
-        eta = 1/niter
-        MSL, P_sigma = generate_data(env, MSL, pi, beta, n=100, m=100, eta=eta)
-        for n_pl in tqdm(range(num_players), desc="player", position=1, leave=False):
-            for n_sw in range(num_swaps):
-                ps = list(range(len(P_sigma)))
-                ps.remove(n_pl)
-                opponent = P_sigma[np.random.choice(ps)]
-                env.reset(opponent=opponent, train=True)
-                Q[n_pl] = tabular_Q(env, num_steps_per_iter//num_swaps, Q=Q[n_pl], epsilon=eps, alpha=alpha, eval_interval=-1)
-                beta[n_pl]*=0
-            for s in range(beta.shape[1]):
-                beta[n_pl,s,Q[n_pl,s].argmax()]=1
+        # rl beta strategy
+        
+        # reset Q
+        Q = np.random.randn(2, env.observation_space.n,env.action_space.n)*1e-2
+        Q[:,-env.n_ternimal:] = 0 # terminal states to 0
+        for i,j in [(0,1),(1,0)]:
+            avg_policy = np.copy(pi.mean(0))
+            env.reset(opponent=Agent(pi[j]), train=True)
+            Q[i] = tabular_Q(env, num_steps_per_iter, Q=Q[i], epsilon=eps, alpha=alpha, eval_interval=-1)
+            beta[i] = np.eye(env.action_space.n)[Q[i].argmax(-1)]
 
-        pi = MSL/np.sum(MSL,axis=-1,keepdims=True)
-        expl = exploitability(beta,pi)
-        pbar.set_description(f"expl={round(expl,2)}|Iter")
-        pbar.refresh() # to show immediately the update
+            # eta = 1/niter
+            # pi[i] += eta*(beta[i]-pi[i])
+
+        Ne=300
+        r1,r2 = exploitability(beta, pi, Ne=Ne)
+        expl=r1+r2
+        eta = max(0.2/np.sqrt(niter),0.0001)
+        pi += eta*(beta-pi)
+
+        pbar.set_description(f"eta={round(eta,4)}, expl={round(expl,2)} {pi.mean(0)[0,0]}|Iter")
+        pbar.refresh()
+    return Q, pi
+
+def selfplay(env, num_iters=1000, num_steps_per_iter = 20000, eps=0.1, alpha=0.1):
+    # Q = np.random.randn(env.observation_space.n,env.action_space.n)*1e-2
+    # Q[-env.n_ternimal:] = 0 # terminal states to 0
+    pi = np.ones([env.observation_space.n,env.action_space.n])
+    pi = pi/pi.sum(-1,keepdims=True)
+
+    # pi[0,0]=0.25
+    # pi[0,1]=0.25
+    # pi[0,2]=0.5
+
+    beta = np.copy(pi)
+    expl = 1
+    pbar = tqdm(range(1,num_iters+1), desc="Iter", position=0)
+    for niter in pbar:
+        # rl beta strategy
+        
+        # reset Q
+        Q = np.random.randn(env.observation_space.n,env.action_space.n)*1e-2
+        Q[-env.n_ternimal:] = 0 # terminal states to 0
+
+        env.reset(opponent=Agent(pi), train=True)
+        Q = tabular_Q(env, num_steps_per_iter, Q=Q, epsilon=eps, alpha=alpha, eval_interval=-1)
+        beta = np.eye(env.action_space.n)[Q.argmax(-1)]
+        # beta = softmax(Q, T=1.02)
+        # print(pi)
+        # print(Q)
+        # exit()
+
+        Ne = 1000
+        R=0
+        beta_agent = Agent(beta)
+        for i in range(Ne):
+            state, info = env.reset(opponent=Agent(pi), train=True)
+            for t in itertools.count():
+                action = beta_agent.step(state)
+                state, r, terminated, truncated, _ = env.step(action)
+                if terminated or truncated:
+                    R+=r
+                    break
+
+        expl = R/Ne
+        
+        # eta = max(0.5/np.sqrt(niter),0.01)
+        # a = np.maximum(expl-1/np.sqrt(Ne),0)
+        # pi += eta*(beta-pi)*a
+
+        eta = 1/niter
+        pi += eta*(beta-pi)
+
+
+        pbar.set_description(f"eta={round(eta,4)}, expl={round(expl,2)} {pi[0],Q[0].argmax()} |Iter")
+        pbar.refresh()
     return Q, pi
 
 if __name__=="__main__":
@@ -108,15 +144,16 @@ if __name__=="__main__":
         args.seed = int(time.time())
     np.random.seed(args.seed)
     print("running with seed", args.seed)
-    # env = YunEnv()
-    env = RPSEnv()
+    env = YunEnv()
+    # env = RPSEnv()
 
     print("args:",args)
 
     print("Training...")
     start = time.time()
-    Q,pi = selfplay(env, num_iters=100, num_steps_per_iter = 20000, eps=0.1, alpha=0.01, num_players=2)
+    # Q,pi = selfplay(env, num_iters=1000, num_steps_per_iter = 20000, eps=0.1, alpha=0.01)
+    Q,pi = fictitious_selfplay(env, num_iters=1000, num_steps_per_iter = 20000, eps=0.1, alpha=0.1)
+
     np.save(args.model_file, {"Q":Q,"PI":pi})
-    print(pi[0])
-    print(Q[0])
+
     print("Training complete, model saved at {}, elapsed {}s".format(args.model_file,round(time.time()-start,2)))

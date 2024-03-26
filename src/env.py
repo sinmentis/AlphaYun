@@ -142,20 +142,21 @@ class RPSEnv(gym.Env):
             self._opponent_action = self.action_space.sample()
         
         d=self._agent_action-self._opponent_action
+        bonus = 2
         if d%3==1:
-            self._game_state=1
+            self._game_state = 1
             reward = 1
-            if self._agent_action==1:
-                reward = 2
+            if self._agent_action == 1:
+                reward = bonus
         elif d%3==2:
-            self._game_state=2
+            self._game_state = 2
             reward = -1
             if self._opponent_action==1:
-                reward = -2
+                reward = -bonus
         else:
             self._game_state=0
             reward = 0
-
+        reward+=np.random.randn() # perturbation
         # An episode is done iff one agent has won
         terminated = self._game_state>0
         observation = self._game_state
@@ -279,7 +280,7 @@ class YunEnv(gym.Env):
                 reward = -0.05 # time penalty
             else:
                 reward = 0
-
+        reward += np.random.randn() #perturbation
         observation = self._get_obs()
         info = self._get_info()
 

@@ -67,7 +67,7 @@ def threshed_uniform_policy(Q, state, nA, thresh=0.02, output_p=False):
 
 def softmax(logp,T=1):
     ex = np.exp(logp/T+1e-7)
-    prob = ex/np.sum(ex,-1)
+    prob = ex/np.sum(ex,axis=-1,keepdims=True)
     return prob
 
 def softmax_sampling_policy(Q, T, state, nA, thresh=-0.98, output_p=False):
@@ -80,7 +80,7 @@ def softmax_sampling_policy(Q, T, state, nA, thresh=-0.98, output_p=False):
     return A
 
 
-def tabular_Q(env, num_steps, Q=None, discount=1, epsilon=0.1, alpha=0.5, eval_interval=1000, n_ternimal=1):
+def tabular_Q(env, num_steps, Q=None, discount=0.9, epsilon=0.1, alpha=0.5, eval_interval=1000, n_ternimal=1):
     if Q is None:
         Q = np.random.randn(env.observation_space.n,env.action_space.n)*1e-2
         Q[-n_ternimal:] = 0 # terminal states to 0
@@ -106,7 +106,6 @@ def tabular_Q(env, num_steps, Q=None, discount=1, epsilon=0.1, alpha=0.5, eval_i
             action = epsilon_greedy_policy(Q, epsilon, state, env.action_space.n)
 
             next_state, reward, terminated, truncated, _ = env.step(action)
-
 
             Q[state, action] += alpha*(reward + discount*Q[next_state].max()-Q[state, action])
             state = next_state
@@ -175,7 +174,7 @@ def test():
     # train
     train = 1
     if train:
-        num_steps = 2000000
+        num_steps = 1000000
         # Q = tabular_sarsa(env, num_steps, discount=1.0, epsilon=0.1, alpha=0.5, eval_interval=10000,n_ternimal=1)
         Q = tabular_Q(env, num_steps, discount=1.0, epsilon=0.1, alpha=0.5, eval_interval=10000,n_ternimal=1)
 
