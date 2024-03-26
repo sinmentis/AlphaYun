@@ -1,10 +1,14 @@
 from action import *
-from src.player import Player
-
+from player import Player
+from sarsa import SarsaAgent
+from yunenv import YunEnv, Rule
+import numpy as np
 
 class Game:
-    def __init__(self, player_list: list[Player]):
+    def __init__(self, player_list: list[Player], bot_model_file="botQ.npy"):
         self.player_list = player_list
+        self.bot_mdp = Rule()
+        self.bot = SarsaAgent(np.load(bot_model_file)[0], mode="proportional", thresh=2e-2)
         self.init_game()
 
     def init_game(self):
@@ -23,8 +27,25 @@ class Game:
         raise Exception("{id} player can't be found")
 
     def request_user_action(self, player: Player, action: BaseAction | None = None):
+        if "COM" in player.name:
+            opponent = self.player_list[player.id-1] # only observe one opponent for now
+            observation = YunEnv.convert_obs(player.num_yun, opponent.num_yun, self.bot_mdp)
+            # print(f"obs:{observation} ({player.num_yun},{opponent.num_yun})")
+            action_id = self.bot.step(observation)
+            yun,atk,defs = self.bot_mdp.decode_action(action_id)
+            
+            if atk and ActionType.ATTACK in player.get_available_action_list() and atk in player.get_available_action_level(ActionType.ATTACK):
+                target_list = [target.id for target in self.player_list if target.id != player.id]
+                action = BaseAction(ActionType.ATTACK, player.id, target_list, atk)
+                print(f"[{player.id}]{player.name}: ATTACK! (lvl {atk})")
+            elif defs and ActionType.DEFENCE in player.get_available_action_list() and defs in player.get_available_action_level(ActionType.DEFENCE):
+                action = BaseAction(ActionType.DEFENCE, player.id, [player.id], defs)
+                print(f"[{player.id}]{player.name}: BLOCK! (lvl {defs})")
+            else:
+                action = BaseAction(ActionType.YUN, player.id, [player.id], 1)
+                print(f"[{player.id}]{player.name}: YUN!")
         # TODO: Need input error handler just in case user being idoit
-        if not action:
+        elif not action:
             print(f"[{player.id}]{player.name}! Choose your next move:")
             for action in player.get_available_action_list():
                 print(f"\t[{action.value}]\t{action.name}")
