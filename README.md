@@ -12,4 +12,5 @@ python play.py
 
 ## The Best Strategy
 The graph below shows the optimal probability of the actions "C"(charge), "A"(attack), and "D"(defend) at each game state (s1,s2). For example, at (s1,s2)=(2,3) player 1 has 2 energy and player 2 has 3. Please refer to the [report](./best_strategy.ipynb) if you are interested in how this strategy is found.
+
 <img src = "imgs/Q6x6.png" width ="70%" />
