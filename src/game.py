@@ -1,14 +1,14 @@
 from action import *
 from player import Player
-from sarsa import SarsaAgent
-from yunenv import YunEnv, Rule
+from agent import Agent
+from env import YunEnv, Rule
 import numpy as np
 
 class Game:
-    def __init__(self, player_list: list[Player], bot_model_file="botQ.npy"):
+    def __init__(self, player_list: list[Player], bot_model_file="bot.npy"):
         self.player_list = player_list
         self.bot_mdp = Rule()
-        self.bot = SarsaAgent(np.load(bot_model_file)[0], mode="proportional", thresh=2e-2)
+        self.bot = Agent(np.load(bot_model_file,allow_pickle=1).item()["nash"][0], mode="prob")
         self.init_game()
 
     def init_game(self):

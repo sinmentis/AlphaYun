@@ -40,6 +40,13 @@ class Rule(object):
         else:
             return defense + self.level
 
+    def available_actions(self, s1, s2):
+        A = np.zeros(self.n_max_actions)
+        A[0]=1
+        A[1:min(self.level,s1)+1]=1
+        A[self.level+1:min(self.level,s2)+self.level+1]=1
+        return A
+
     def step(self, agent_state:int,
              opponent_state:int,
              agent_action:int,
@@ -118,10 +125,11 @@ class RPSEnv(gym.Env):
             "game_state":self._game_state
             }
 
-    def reset(self, seed=None, opponent=None, **kargs):
+    def reset(self, seed=None, opponent=None, perturb=True, **kargs):
         super().reset(seed=seed)
         if opponent is not None:
             self.opponent = opponent
+        self.perturb=perturb
         # game start
         self._game_state=0
 
@@ -133,6 +141,9 @@ class RPSEnv(gym.Env):
         info = self._get_info()
         self._i_step = 0
         return observation, info
+    
+    def available_actions(self, state):
+        return np.ones(3)
 
     def step(self, action):
         self._agent_action = action
@@ -156,7 +167,8 @@ class RPSEnv(gym.Env):
         else:
             self._game_state=0
             reward = 0
-        reward+=np.random.randn() # perturbation
+        # if self.perturb:
+        #     reward+=np.random.randn() # perturbation
         # An episode is done iff one agent has won
         terminated = self._game_state>0
         observation = self._game_state
@@ -189,6 +201,8 @@ class YunEnv(gym.Env):
         # Action space is the maximum number of actions possible
         self.action_space = spaces.Discrete(rule.n_max_actions)
 
+        self.reward_perturbation_std=0
+
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
@@ -198,6 +212,17 @@ class YunEnv(gym.Env):
     def convert_obs(S1,S2,rule):
         n = rule.n_max_energy + 1 
         return min(S1,rule.n_max_energy) * n + min(S2,rule.n_max_energy)
+
+    @staticmethod
+    def convert_states(observation, rule):
+        n = rule.n_max_energy + 1
+        return (observation//n, observation%n)
+
+    def available_actions(self, observation):
+        if observation<self.N**2:
+            return self.rule.available_actions(*YunEnv.convert_states(observation, self.rule))
+        else:
+            return np.ones(self.action_space.n)
 
     def _get_obs(self):
         # agent's observation as a int
@@ -227,13 +252,14 @@ class YunEnv(gym.Env):
             "game_state":self._game_state
             }
     
-    def reset(self, seed=None, opponent=None, train=None):
+    def reset(self, seed=None, opponent=None, train=None, perturb=True):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
         if train is not None:
             self.train = train
         if opponent is not None:
             self.opponent = opponent
+        self.perturb=perturb
         # game start
         self._game_state=0
 
@@ -260,7 +286,7 @@ class YunEnv(gym.Env):
     def step(self, action):
         self._agent_action = action
         if self.opponent is not None:
-            self._opponent_action = self.opponent.step(self._oppo_obs(), self.action_space.n)
+            self._opponent_action = self.opponent.step(self._oppo_obs(), Amask=self.available_actions(self._oppo_obs()))
         else:
             self._opponent_action = self.action_space.sample()
         self._agent_state, self._opponent_state, self._game_state = self.rule.step(agent_state=self._agent_state,
@@ -276,11 +302,9 @@ class YunEnv(gym.Env):
         elif self._game_state==1:
             reward = -1 # binary reward
         else:
-            if self.train:
-                reward = -0.05 # time penalty
-            else:
-                reward = 0
-        reward += np.random.randn() #perturbation
+            reward = 0
+        if self.perturb:
+            reward += np.random.randn()*self.reward_perturbation_std #perturbation
         observation = self._get_obs()
         info = self._get_info()
 
@@ -302,18 +326,29 @@ def test():
     print(env.observation_space.n)
     print(env.action_space.n)
 
-    opponent = Agent(np.random.randn(env.observation_space.n,env.action_space.n))
-    agent = Agent(np.random.randn(env.observation_space.n,env.action_space.n))
-    observation, info = env.reset(seed=None, opponent=None)
+    opponent = Agent(np.random.rand(env.observation_space.n,env.action_space.n))
+    agent = Agent(np.random.rand(env.observation_space.n,env.action_space.n))
+    observation, info = env.reset(seed=None, opponent=opponent)
     print(0, info)
     for i in range(1,10):
-        action = agent.step(observation, env.action_space.n)
+        action = agent.step(observation, Amask=env.available_actions(observation))
         observation, reward, terminated, truncated, info = env.step(action)
         print(i, info)
         if terminated or truncated:
             break
 
-    print("pass")
+    R = 0
+    N = 5000
+    for i in range(5000):
+        observation, info = env.reset(seed=None, opponent=agent)
+        for t in range(20):
+            action = agent.step(observation, Amask=env.available_actions(observation))
+            observation, reward, terminated, truncated, info = env.step(action)
+            if terminated or truncated:
+                R+=reward
+                break
+    
+    print(f"pass, symmetry={R/N} +- {1/np.sqrt(N)}")
 
 if __name__=="__main__":
     test()

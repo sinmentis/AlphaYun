@@ -13,19 +13,22 @@ class Agent(object):
         self.mode = mode
         self.name = name
         self.thresh = thresh
-    def step(self, state, nA=None):
+    def step(self, state, nA=None, Amask=None):
         if nA is None:
             nA = self.Q[state].shape[-1]
+        if Amask is None:
+            Amask = np.ones(nA)
         if self.Q is None:
             A = np.random.randint(0,nA)
         else:
             if self.mode=='proportional':
                 A = proportional_policy(self.Q, state, nA, thresh=self.thresh)
             elif self.mode=='prob':
-                if self.Q[state].sum()>0:
-                    A = np.random.choice(nA, p=self.Q[state])
+                p = self.Q[state]*Amask
+                if p.sum()>0:
+                    A = np.random.choice(nA, p=p/p.sum())
                 else:
-                    A = np.random.choice(nA)
+                    A = np.random.choice(np.arange(nA)[Amask.astype(bool)])
             elif self.mode=='softmax':
                 A = softmax_sampling_policy(self.Q, self.T, state, nA, thresh=self.thresh)
             elif self.mode=='argmax':
