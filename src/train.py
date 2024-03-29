@@ -17,9 +17,13 @@ def solve_nash(R_matrix):
     b_eq = np.zeros(D)
     A_eq[0,:]=1
     b_eq[0]=1
-    c=np.ones(D)
-    re=linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, bounds=(0,1))
-    return re.x
+    x=[]
+    for i in range(D):
+        c=np.zeros(D)
+        c[i]=1
+        re=linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, bounds=(0,1))
+        x.append(re.x)
+    return np.mean(x,0)
 
 def estimate_reward(env, num_episodes, p1, p2):
     R=0
@@ -32,15 +36,6 @@ def estimate_reward(env, num_episodes, p1, p2):
                 R+=r
                 break
     return R/num_episodes
-
-def exploitability(env,beta,pi,Ne=300):
-    b1 = Agent(beta[0])
-    b2 = Agent(beta[1])
-    pi1 = Agent(pi[0])
-    pi2 = Agent(pi[1])
-    R1 = estimate_reward(env, Ne, b1, pi2)
-    R2 = estimate_reward(env, Ne, b2, pi1)
-    return R1, R2
 
 def exploitability_nash(env,nash_pi,pi,Ne=300):
     R = 0
@@ -58,8 +53,7 @@ def gamescape(env, pi, Ne):
                 continue
             R[i,j] = estimate_reward(env,Ne,Agent(pi[i]),Agent(pi[j]))
     return R
-
-def PSROrN(env, num_iters=1000, num_steps_per_iter = 10000, eps=0.1, alpha=0.1, save_interval=1, num_policies=20):
+def PSROrN(env, num_iters=1000, num_steps_per_iter = 10000, eps=0.1, alpha=0.1, save_interval=1, num_policies=20, evaluation_episodes=500):
     nash=[]
     Pih = []
     Rh = []
@@ -68,16 +62,22 @@ def PSROrN(env, num_iters=1000, num_steps_per_iter = 10000, eps=0.1, alpha=0.1, 
     for s in range(env.observation_space.n):
         pi[:,s]*=env.available_actions(s).reshape(1,-1)
     pi = pi/pi.sum(-1,keepdims=True)
-    Ne = 500
+    Ne = evaluation_episodes
     expls = [1]
     divs = [0]
-
     pbar = tqdm(range(1,num_iters+1), desc="Iter", position=0)
     for niter in pbar:
         # compute nash
         R = gamescape(env, pi, Ne)
         nash_p = solve_nash(R)
 
+        # eval exploitability
+        nash_pi = nash_p.reshape(-1,1,1)*pi
+        nash_pi = nash_pi.sum(0)
+        expl=exploitability_nash(env, nash_pi, pi, Ne=Ne)
+        div = (nash_p.reshape(1,-1)@np.maximum(R,0)@nash_p.reshape(-1,1))[0,0]
+
+        new_pi = np.zeros_like(pi)
         # train agents with positive p
         for agent_id in tqdm(range(num_policies), desc="Agent training", position=1, leave=False):
             # reset Q
@@ -87,7 +87,8 @@ def PSROrN(env, num_iters=1000, num_steps_per_iter = 10000, eps=0.1, alpha=0.1, 
             # compute opponent strategy constructed by rectified nash
             pi_weights = nash_p*(R[agent_id]>0).astype(int)
             if pi_weights.sum()<=0:
-                pi_weights=np.ones_like(pi_weights)
+                pi_weights=np.zeros_like(pi_weights)
+                pi_weights[np.roll(R[agent_id],-agent_id)[1:].argmax()]=1
             pi_weights = pi_weights/pi_weights.sum()
             opponent_pi = pi_weights.reshape(-1,1,1)*pi
             opponent_pi = opponent_pi.sum(0)
@@ -97,14 +98,12 @@ def PSROrN(env, num_iters=1000, num_steps_per_iter = 10000, eps=0.1, alpha=0.1, 
 
             # update avg strategy towards beta
             eta = max(0.5/niter,0.001)
-            pi[agent_id] += eta*(beta-pi[agent_id])
+            new_pi[agent_id] = pi[agent_id] + eta*(beta-pi[agent_id])
 
-        # eval exploitability
-        nash_pi = nash_p.reshape(-1,1,1)*pi
-        nash_pi = nash_pi.sum(0)
-        expl=exploitability_nash(env, nash_pi, pi, Ne=Ne)
-        div = (nash_p.reshape(1,-1)@np.maximum(R,0)@nash_p.reshape(-1,1))[0,0]
-        desc = f"eta={round(eta,4)}, expl={round(expl,4)}, div={round(div,4)} | Iter"
+        # update pi
+        pi = np.copy(new_pi)
+
+        desc = f"eta={round(eta,4)}, expl={round(expl,4)}, div={round(div,4)} nash={nash_pi[0]}| Iter"
         
         pbar.set_description(desc)
         pbar.refresh()
