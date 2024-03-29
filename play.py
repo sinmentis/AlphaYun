@@ -6,7 +6,7 @@ from game import Game
 
 def main():
     player_list = [Player("BIG MONKEY"), Player("COM")]
-    game = Game(player_list,bot_model_file="src/bot.npy")
+    game = Game(player_list,bot_model_file="ckpts/bot.npy")
     game.run()
 
 
