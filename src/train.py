@@ -103,7 +103,7 @@ def PSROrN(env, num_iters=1000, num_steps_per_iter = 10000, eps=0.1, alpha=0.1, 
         # update pi
         pi = np.copy(new_pi)
 
-        desc = f"eta={round(eta,4)}, expl={round(expl,4)}, div={round(div,4)} nash={nash_pi[0]}| Iter"
+        desc = f"eta={round(eta,4)}, expl={round(expl,4)}, div={round(div,4)}| Iter"
         
         pbar.set_description(desc)
         pbar.refresh()
