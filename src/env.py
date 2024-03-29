@@ -125,11 +125,10 @@ class RPSEnv(gym.Env):
             "game_state":self._game_state
             }
 
-    def reset(self, seed=None, opponent=None, perturb=True, **kargs):
+    def reset(self, seed=None, opponent=None, **kargs):
         super().reset(seed=seed)
         if opponent is not None:
             self.opponent = opponent
-        self.perturb=perturb
         # game start
         self._game_state=0
 
@@ -167,8 +166,7 @@ class RPSEnv(gym.Env):
         else:
             self._game_state=0
             reward = 0
-        # if self.perturb:
-        #     reward+=np.random.randn() # perturbation
+
         # An episode is done iff one agent has won
         terminated = self._game_state>0
         observation = self._game_state
@@ -200,8 +198,6 @@ class YunEnv(gym.Env):
 
         # Action space is the maximum number of actions possible
         self.action_space = spaces.Discrete(rule.n_max_actions)
-
-        self.reward_perturbation_std=0
 
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
@@ -252,14 +248,13 @@ class YunEnv(gym.Env):
             "game_state":self._game_state
             }
     
-    def reset(self, seed=None, opponent=None, train=None, perturb=True):
+    def reset(self, seed=None, opponent=None, train=None):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
         if train is not None:
             self.train = train
         if opponent is not None:
             self.opponent = opponent
-        self.perturb=perturb
         # game start
         self._game_state=0
 
@@ -303,8 +298,7 @@ class YunEnv(gym.Env):
             reward = -1 # binary reward
         else:
             reward = 0
-        if self.perturb:
-            reward += np.random.randn()*self.reward_perturbation_std #perturbation
+
         observation = self._get_obs()
         info = self._get_info()
 

@@ -6,21 +6,9 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import numpy as np
 from env import YunEnv
-from agent import Agent, softmax_sampling_policy, proportional_policy, threshed_uniform_policy
+from agent import Agent
 import argparse, time, itertools
 from scipy.linalg import schur
-
-def thresh(method):
-    match method:
-        case "proportional":
-            return 0.02
-        case "softmax":
-            return -0.98
-        case "threshed_uniform":
-            return -0.98
-        case _:
-            return -1e7
-
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
@@ -31,7 +19,6 @@ if __name__=="__main__":
     parser.add_argument('--stats', action='store_true', help="run state analysis")
     parser.add_argument('-s', type=int, help="grid size of the stats to display", default=3)
     parser.add_argument('--tour', action='store_true', help="run tournament")
-    parser.add_argument('--tsize', type=int, help="number of models in tournament", default=10000)
     parser.add_argument('--selfplay', action='store_true', help="run self play")
 
     args = parser.parse_args()
@@ -101,7 +88,7 @@ if __name__=="__main__":
     if args.tour:
         num_matches_per_pair = 200
         max_steps = 30
-        num_models = 50
+        num_models = 20
         random_start = args.r
         Pi_all = model.get('pi').reshape(-1,Pi.shape[1],Pi.shape[2])
         pi = Pi_all[:num_models]
@@ -114,16 +101,12 @@ if __name__=="__main__":
         tot_matches = num_matches_per_pair*(1+NP)*NP/2
         print("running tournament, total matches: {}".format(tot_matches))
 
-        logs = []
         for i in tqdm(range(NP), position=0):
-            Lj = []
             for j in tqdm(range(NP), position=1, leave=False):
                 if j<i:
                     R[i,j]=-R[j,i]
                     continue
-                Lk = []
                 for k in range(num_matches_per_pair):
-                    
                     P1 = Agent(pi[i], mode='prob')
                     P2 = Agent(pi[j], mode='prob')
 
@@ -144,9 +127,7 @@ if __name__=="__main__":
                             break
                         if truncated:
                             break
-                    # Lk.append(Lt)
-                # Lj.append(Lk)
-            # logs.append(Lj)
+
         R/=num_matches_per_pair
         tot=R.sum(1,keepdims=True)/NP
 
@@ -160,19 +141,14 @@ if __name__=="__main__":
         fig.tight_layout()
 
         # evaluation matrix
-        # R = np.concatenate([R,tot],1)
+
         fig, ax = plt.subplots(figsize=(8,8))
         im = ax.imshow(-R, cmap = "RdBu_r")
         ax.set_title("Evaluation matrix")
-        # ax.set_xticks(np.arange(NP+1),list(range(NP))+["Total"])
-        # ax.set_xlabel("P2")
-        # ax.set_yticks(np.arange(NP),np.arange(NP))
-        # ax.set_ylabel("P1")
+
         ax.set_xticklabels([])
         ax.set_yticklabels([])
-        # for i in range(NP):
-        #     for j in range(NP+1):
-        #         text = ax.text(j, i, round(R[i, j],2),ha="center", va="center", color="w")
+
         fig.tight_layout()
 
         # state visit
@@ -237,7 +213,7 @@ if __name__=="__main__":
         plt.show()
 
     if args.selfplay:
-        N = args.tsize
+        N = 100000
         print(f"running selfplay (nash vs agent 0) {int(N)} times")
         P1 = Agent(nash, mode='prob')
         P2 = Agent(Pi[0], mode='prob')
