@@ -80,8 +80,6 @@ def PSROrN(env, num_iters=1000, num_steps_per_iter = 10000, eps=0.1, alpha=0.1, 
 
         # train agents with positive p
         for agent_id in tqdm(range(num_policies), desc="Agent training", position=1, leave=False):
-            # if nash_p[agent_id]<=0:
-            #     continue
             # reset Q
             Q = np.random.randn(env.observation_space.n,env.action_space.n)*1e-2
             Q[-env.n_ternimal:] = 0 # terminal states to 0
@@ -106,7 +104,6 @@ def PSROrN(env, num_iters=1000, num_steps_per_iter = 10000, eps=0.1, alpha=0.1, 
         nash_pi = nash_pi.sum(0)
         expl=exploitability_nash(env, nash_pi, pi, Ne=Ne)
         div = (nash_p.reshape(1,-1)@np.maximum(R,0)@nash_p.reshape(-1,1))[0,0]
-        # desc = f"eta={round(eta,4)}, expl={round(expl,4)} {nash_pi[0]}|Iter"
         desc = f"eta={round(eta,4)}, expl={round(expl,4)}, div={round(div,4)} | Iter"
         
         pbar.set_description(desc)
