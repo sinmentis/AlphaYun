@@ -7,7 +7,7 @@ Guess what's the best strategy for Bor-Bor Zan
 ## Quick Start
 Play against the best strategy and see how you like it:
 ```
-python play.py
+python main.py
 ```
 
 ## The Best Strategy

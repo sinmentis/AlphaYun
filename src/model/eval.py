@@ -5,12 +5,12 @@ rlsn 2024
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import numpy as np
-from env import YunEnv
-from agent import Agent
+from src.model.env import YunEnv
+from src.model.agent import Agent
 import argparse, time, itertools
 from scipy.linalg import schur
 
-if __name__=="__main__":
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_file', type=str, help="filename of the model", default="Qh.npy")
     parser.add_argument('--seed', type=int, help="set seed", default=None)
@@ -31,7 +31,7 @@ if __name__=="__main__":
 
     env = YunEnv()
 
-    model = np.load(args.model_file,allow_pickle=True).item()
+    model = np.load(args.model_file, allow_pickle=True).item()
     nash = model.get('nash')[0]
     Pi = model.get('pi')[0]
     print("model loaded from {}, size {}".format(args.model_file, Pi.shape))
@@ -40,11 +40,11 @@ if __name__=="__main__":
         P1 = Agent(nash, name='p1')
 
         P2 = Agent(nash, name='p2')
-        
+
         observation, info = env.reset(seed=None, opponent=P2, train=args.r)
         print("Example match:")
         print(0, info)
-        for i in range(1,100):
+        for i in range(1, 100):
             action = P1.step(observation, env.action_space.n)
             observation, reward, terminated, truncated, info = env.step(action)
             print(i, info)
@@ -56,31 +56,31 @@ if __name__=="__main__":
         Na = env.action_space.n
         grid_size = args.s
         avg_size = 5
-        action_labels = ["C","A1","A2","A3","D1","D2","D3"]
+        action_labels = ["C", "A1", "A2", "A3", "D1", "D2", "D3"]
 
         # state-action value grid
-        fig, axs = plt.subplots(grid_size,grid_size,figsize=(10,10))
+        fig, axs = plt.subplots(grid_size, grid_size, figsize=(10, 10))
         fig.suptitle("Behavioral Strategy @ appox. Nash Equilibrium")
         for S1 in range(grid_size):
             for S2 in range(grid_size):
-                S = S1 * (env.rule.n_max_energy+1) + S2
-                mean = model.get('nash')[:avg_size,S].mean(0)
-                std = model.get('nash')[:avg_size,S].std(0)
-                axs[S1,S2].bar(np.arange(Na)+1,mean, yerr=std, alpha=0.5)
-                axs[S1,S2].text(4, 0.5, f"({S1},{S2})",
-                            ha="center", va="center", color="black", alpha=0.15, fontsize=20, weight='bold')
-                axs[S1,S2].set_xticks(np.arange(nash.shape[-1])+1,action_labels)
-                axs[S1,S2].set_ylim(0, 1) 
-                axs[S1,S2].grid()
-                
-                if S1==grid_size-1:
-                    axs[S1,S2].set_xlabel("A")
+                S = S1 * (env.rule.n_max_energy + 1) + S2
+                mean = model.get('nash')[:avg_size, S].mean(0)
+                std = model.get('nash')[:avg_size, S].std(0)
+                axs[S1, S2].bar(np.arange(Na) + 1, mean, yerr=std, alpha=0.5)
+                axs[S1, S2].text(4, 0.5, f"({S1},{S2})",
+                                 ha="center", va="center", color="black", alpha=0.15, fontsize=20, weight='bold')
+                axs[S1, S2].set_xticks(np.arange(nash.shape[-1]) + 1, action_labels)
+                axs[S1, S2].set_ylim(0, 1)
+                axs[S1, S2].grid()
+
+                if S1 == grid_size - 1:
+                    axs[S1, S2].set_xlabel("A")
                 else:
-                    axs[S1,S2].xaxis.set_ticklabels([])
-                if S2==0:
-                    axs[S1,S2].set_ylabel("pi(a|s)")
+                    axs[S1, S2].xaxis.set_ticklabels([])
+                if S2 == 0:
+                    axs[S1, S2].set_ylabel("pi(a|s)")
                 else:
-                    axs[S1,S2].yaxis.set_ticklabels([])
+                    axs[S1, S2].yaxis.set_ticklabels([])
 
         fig.tight_layout()
         plt.show()
@@ -90,21 +90,21 @@ if __name__=="__main__":
         max_steps = 30
         num_models = 20
         random_start = args.r
-        Pi_all = model.get('pi').reshape(-1,Pi.shape[1],Pi.shape[2])
+        Pi_all = model.get('pi').reshape(-1, Pi.shape[1], Pi.shape[2])
         pi = Pi_all[:num_models]
         NP = pi.shape[0]
-        R = np.zeros([NP,NP])
+        R = np.zeros([NP, NP])
         ns = env.rule.n_max_energy + 1
         state_freq = np.zeros(env.observation_space.n)
         state_value = [list() for i in range(env.observation_space.n)]
         win_last_state_freq = np.zeros(env.observation_space.n)
-        tot_matches = num_matches_per_pair*(1+NP)*NP/2
+        tot_matches = num_matches_per_pair * (1 + NP) * NP / 2
         print("running tournament, total matches: {}".format(tot_matches))
 
         for i in tqdm(range(NP), position=0):
             for j in tqdm(range(NP), position=1, leave=False):
-                if j<i:
-                    R[i,j]=-R[j,i]
+                if j < i:
+                    R[i, j] = -R[j, i]
                     continue
                 for k in range(num_matches_per_pair):
                     P1 = Agent(pi[i], mode='prob')
@@ -116,34 +116,34 @@ if __name__=="__main__":
                         action = P1.step(observation, Amask=env.available_actions(observation))
                         observation, reward, terminated, truncated, info = env.step(action)
                         Lt.append(info)
-                        state_freq[observation]+=1
+                        state_freq[observation] += 1
                         if terminated:
-                            R[i,j]+=reward
+                            R[i, j] += reward
                             obs_set = set([inf["observation"] for inf in Lt])
                             for obs in obs_set:
-                                state_value[obs]+=[reward]
-                            if reward==1:
-                                win_last_state_freq[Lt[-2]["observation"]]+=1
+                                state_value[obs] += [reward]
+                            if reward == 1:
+                                win_last_state_freq[Lt[-2]["observation"]] += 1
                             break
                         if truncated:
                             break
 
-        R/=num_matches_per_pair
-        tot=R.sum(1,keepdims=True)/NP
+        R /= num_matches_per_pair
+        tot = R.sum(1, keepdims=True) / NP
 
         # schur decomp
-        fig, ax = plt.subplots(figsize=(6,6))
+        fig, ax = plt.subplots(figsize=(6, 6))
         T, Z = schur(R, output='complex')
         cm = plt.get_cmap("RdBu_r")
         ax.set_title("First 2 components by Schur decomposition")
-        col = (tot.max()-tot)/(tot.max()-tot.min())
-        ax.scatter(Z.real[:,0],Z.real[:,1],marker='o',c=cm([int(c*255) for c in col]))
+        col = (tot.max() - tot) / (tot.max() - tot.min())
+        ax.scatter(Z.real[:, 0], Z.real[:, 1], marker='o', c=cm([int(c * 255) for c in col]))
         fig.tight_layout()
 
         # evaluation matrix
 
-        fig, ax = plt.subplots(figsize=(8,8))
-        im = ax.imshow(-R, cmap = "RdBu_r")
+        fig, ax = plt.subplots(figsize=(8, 8))
+        im = ax.imshow(-R, cmap="RdBu_r")
         ax.set_title("Evaluation matrix")
 
         ax.set_xticklabels([])
@@ -152,56 +152,55 @@ if __name__=="__main__":
         fig.tight_layout()
 
         # state visit
-        state_freq = state_freq[:ns**2]/state_freq.sum()
-        state_freq = state_freq.reshape(ns,ns)
+        state_freq = state_freq[:ns ** 2] / state_freq.sum()
+        state_freq = state_freq.reshape(ns, ns)
 
-        fig, ax = plt.subplots(figsize=(6,6))
-        im = ax.imshow(state_freq, cmap = "Reds")
+        fig, ax = plt.subplots(figsize=(6, 6))
+        im = ax.imshow(state_freq, cmap="Reds")
         ax.set_title("State visit frequency")
-        ax.set_xticks(np.arange(ns),np.arange(ns))
+        ax.set_xticks(np.arange(ns), np.arange(ns))
         ax.set_xlabel("S2")
-        ax.set_yticks(np.arange(ns),np.arange(ns))
+        ax.set_yticks(np.arange(ns), np.arange(ns))
         ax.set_ylabel("S1")
         for i in range(ns):
             for j in range(ns):
-                text = ax.text(j, i, round(state_freq[i, j],2),
-                            ha="center", va="center", color="w")
+                text = ax.text(j, i, round(state_freq[i, j], 2),
+                               ha="center", va="center", color="w")
         fig.tight_layout()
 
         # winner last state
-        win_last_state_freq = win_last_state_freq[:ns**2]/win_last_state_freq.sum()
-        win_last_state_freq = win_last_state_freq.reshape(ns,ns)
+        win_last_state_freq = win_last_state_freq[:ns ** 2] / win_last_state_freq.sum()
+        win_last_state_freq = win_last_state_freq.reshape(ns, ns)
 
-        fig, ax = plt.subplots(figsize=(6,6))
-        im = ax.imshow(win_last_state_freq, cmap = "Reds")
+        fig, ax = plt.subplots(figsize=(6, 6))
+        im = ax.imshow(win_last_state_freq, cmap="Reds")
         ax.set_title("Winner last state frequency")
-        ax.set_xticks(np.arange(ns),np.arange(ns))
+        ax.set_xticks(np.arange(ns), np.arange(ns))
         ax.set_xlabel("S2")
-        ax.set_yticks(np.arange(ns),np.arange(ns))
+        ax.set_yticks(np.arange(ns), np.arange(ns))
         ax.set_ylabel("S1")
         for i in range(ns):
             for j in range(ns):
-                text = ax.text(j, i, round(win_last_state_freq[i, j],2),
-                            ha="center", va="center", color="w")
+                text = ax.text(j, i, round(win_last_state_freq[i, j], 2),
+                               ha="center", va="center", color="w")
         fig.tight_layout()
 
         # V(s)
-        state_value = np.array([np.mean(r) if len(r)>0 else 0 for r in state_value])
-        state_value = state_value[:ns**2]
-        state_value = state_value.reshape(ns,ns)
-        fig, ax = plt.subplots(figsize=(6,6))
-        im = ax.imshow(-state_value, cmap = "RdBu_r")
+        state_value = np.array([np.mean(r) if len(r) > 0 else 0 for r in state_value])
+        state_value = state_value[:ns ** 2]
+        state_value = state_value.reshape(ns, ns)
+        fig, ax = plt.subplots(figsize=(6, 6))
+        im = ax.imshow(-state_value, cmap="RdBu_r")
         ax.set_title("State-value V(s) @ varying states")
-        ax.set_xticks(np.arange(ns),np.arange(ns))
+        ax.set_xticks(np.arange(ns), np.arange(ns))
         ax.set_xlabel("S2")
-        ax.set_yticks(np.arange(ns),np.arange(ns))
+        ax.set_yticks(np.arange(ns), np.arange(ns))
         ax.set_ylabel("S1")
         for i in range(ns):
             for j in range(ns):
-                text = ax.text(j, i, round(state_value[i, j],2),
-                            ha="center", va="center", color="w")
+                text = ax.text(j, i, round(state_value[i, j], 2),
+                               ha="center", va="center", color="w")
         fig.tight_layout()
-
 
         # stats
         print("total match finished: {}".format(env.rule.num_matches))
@@ -230,81 +229,80 @@ if __name__=="__main__":
                 action = P1.step(observation, env.action_space.n)
                 observation, reward, terminated, truncated, info = env.step(action)
                 Lt.append(info)
-                state_freq[observation]+=1
+                state_freq[observation] += 1
                 if terminated:
-                    rewards+=[reward]
-                    length+=[env._i_step]
+                    rewards += [reward]
+                    length += [env._i_step]
                     obs_set = set([inf["observation"] for inf in Lt])
                     for obs in obs_set:
-                        state_value[obs]+=[reward]
-                    if reward==1:
-                        win_last_state_freq[Lt[-2]["observation"]]+=1
+                        state_value[obs] += [reward]
+                    if reward == 1:
+                        win_last_state_freq[Lt[-2]["observation"]] += 1
                     break
                 if truncated:
-                    length+=[env._i_step]
+                    length += [env._i_step]
                     break
-        
 
-         # state visit
-        state_freq = state_freq[:ns**2]/state_freq.sum()
-        state_freq = state_freq.reshape(ns,ns)
+        # state visit
+        state_freq = state_freq[:ns ** 2] / state_freq.sum()
+        state_freq = state_freq.reshape(ns, ns)
 
-        fig, ax = plt.subplots(figsize=(6,6))
-        im = ax.imshow(state_freq, cmap = "Reds")
+        fig, ax = plt.subplots(figsize=(6, 6))
+        im = ax.imshow(state_freq, cmap="Reds")
         ax.set_title("State visit frequency")
-        ax.set_xticks(np.arange(ns),np.arange(ns))
+        ax.set_xticks(np.arange(ns), np.arange(ns))
         ax.set_xlabel("S2")
-        ax.set_yticks(np.arange(ns),np.arange(ns))
+        ax.set_yticks(np.arange(ns), np.arange(ns))
         ax.set_ylabel("S1")
         for i in range(ns):
             for j in range(ns):
-                text = ax.text(j, i, round(state_freq[i, j],2),
-                            ha="center", va="center", color="w")
+                text = ax.text(j, i, round(state_freq[i, j], 2),
+                               ha="center", va="center", color="w")
         fig.tight_layout()
 
         # winner last state
-        win_last_state_freq = win_last_state_freq[:ns**2]/win_last_state_freq.sum()
-        win_last_state_freq = win_last_state_freq.reshape(ns,ns)
+        win_last_state_freq = win_last_state_freq[:ns ** 2] / win_last_state_freq.sum()
+        win_last_state_freq = win_last_state_freq.reshape(ns, ns)
 
-        fig, ax = plt.subplots(figsize=(6,6))
-        im = ax.imshow(win_last_state_freq, cmap = "Reds")
+        fig, ax = plt.subplots(figsize=(6, 6))
+        im = ax.imshow(win_last_state_freq, cmap="Reds")
         ax.set_title("P1 Winning state frequency")
-        ax.set_xticks(np.arange(ns),np.arange(ns))
+        ax.set_xticks(np.arange(ns), np.arange(ns))
         ax.set_xlabel("S2")
-        ax.set_yticks(np.arange(ns),np.arange(ns))
+        ax.set_yticks(np.arange(ns), np.arange(ns))
         ax.set_ylabel("S1")
         for i in range(ns):
             for j in range(ns):
-                text = ax.text(j, i, round(win_last_state_freq[i, j],2),
-                            ha="center", va="center", color="w")
+                text = ax.text(j, i, round(win_last_state_freq[i, j], 2),
+                               ha="center", va="center", color="w")
         fig.tight_layout()
 
         # V(s)
         state_value = np.array([np.average(r) for r in state_value])
-        state_value = state_value[:ns**2]
-        state_value = state_value.reshape(ns,ns)
-        fig, ax = plt.subplots(figsize=(6,6))
-        im = ax.imshow(-state_value, cmap = "RdBu_r")
+        state_value = state_value[:ns ** 2]
+        state_value = state_value.reshape(ns, ns)
+        fig, ax = plt.subplots(figsize=(6, 6))
+        im = ax.imshow(-state_value, cmap="RdBu_r")
         ax.set_title("State-value V(s) @ varying states")
-        ax.set_xticks(np.arange(ns),np.arange(ns))
+        ax.set_xticks(np.arange(ns), np.arange(ns))
         ax.set_xlabel("S2")
-        ax.set_yticks(np.arange(ns),np.arange(ns))
+        ax.set_yticks(np.arange(ns), np.arange(ns))
         ax.set_ylabel("S1")
         for i in range(ns):
             for j in range(ns):
-                text = ax.text(j, i, round(state_value[i, j],2),
-                            ha="center", va="center", color="w")
+                text = ax.text(j, i, round(state_value[i, j], 2),
+                               ha="center", va="center", color="w")
         fig.tight_layout()
 
         rewards = np.array(rewards)
-        win = rewards[rewards>0].shape[0]
+        win = rewards[rewards > 0].shape[0]
         print(f"total match finished within {env.max_episode_steps} steps: {len(rewards)}")
-        print(f"win/loss={win}/{len(rewards)-win}")
+        print(f"win/loss={win}/{len(rewards) - win}")
         print(f"violation end: {env.rule.violation}")
         print(f"stupidity end: {env.rule.stupidity}")
         print(f"busted end: {env.rule.busted}")
         print(f"outpowered end: {env.rule.outpowered}")
         print(f"mismatch end: {env.rule.mismatch}")
-        print(f"mean length = {np.average(length)} +- {np.std(length)/np.sqrt(len(length))}")
-        print(f"mean reward = {np.average(rewards)} +- {np.std(rewards)/np.sqrt(len(rewards))}")
+        print(f"mean length = {np.average(length)} +- {np.std(length) / np.sqrt(len(length))}")
+        print(f"mean reward = {np.average(rewards)} +- {np.std(rewards) / np.sqrt(len(rewards))}")
         plt.show()

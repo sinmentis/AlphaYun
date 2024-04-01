@@ -1,4 +1,4 @@
-from action import BaseAction, ActionType
+from src.game.action import BaseAction, ActionType
 
 MAX_DEFENSE_NUM = 3
 MAX_ATTACK_LEVEL = 3
