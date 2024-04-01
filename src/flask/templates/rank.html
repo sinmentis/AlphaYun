@@ -1,0 +1,30 @@
+<!-- templates/rank.html -->
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>用户排名</h2>
+
+<!-- 排序链接 -->
+<p>排序依据：
+<a href="?sort_by=name">用户名</a> |
+<a href="?sort_by=win_rate">胜率</a> |
+<a href="?sort_by=win_number">胜场</a>
+</p>
+
+<table>
+    <tr>
+        <th>排名</th>
+        <th>用户名</th>
+        <th>胜率</th>
+        <th>胜场</th>
+    </tr>
+    {% for user in users %}
+    <tr class="{{ 'highlight' if loop.index <= 3 }}">
+        <td>{{ loop.index }}</td>
+        <td>{{ user.name }}</td>
+        <td>{{ user.win_rate }}%</td>
+        <td>{{ user.win_number }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

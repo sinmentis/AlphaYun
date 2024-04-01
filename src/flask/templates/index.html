@@ -1,0 +1,11 @@
+<!-- templates/index.html -->
+{% extends 'base.html' %}
+
+{% block title %}主页{% endblock %}
+
+{% block content %}
+    <h1>欢迎来到游戏</h1>
+    <form action="/game" method="post">
+        <input type="submit" value="开始游戏">
+    </form>
+{% endblock %}

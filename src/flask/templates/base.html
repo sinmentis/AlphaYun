@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}游戏网站{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header>
+        <nav>
+            <ul>
+                <li><a href="{{ url_for('index') }}">主页</a></li>
+                <li><a href="{{ url_for('game') }}">开始游戏</a></li>
+                <li><a href="{{ url_for('rank') }}">排名</a></li>
+                <li><a href="{{ url_for('about') }}">游戏介绍</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    <footer>
+        <p>版权所有 &copy; 2024</p>
+    </footer>
+</body>
+</html>

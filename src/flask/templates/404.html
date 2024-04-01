@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+
+{% block title %}404 页面未找到{% endblock %}
+
+{% block content %}
+<h1>页面未找到</h1>
+<p>很抱歉，我们找不到你请求的页面。</p>
+<a href="{{ url_for('index') }}">返回首页</a>
+{% endblock %}
