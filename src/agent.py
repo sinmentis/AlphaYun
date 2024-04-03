@@ -23,7 +23,10 @@ class Agent(object):
             if self.mode=='prob':
                 p = self.Q[state]*Amask
                 if p.sum()>0:
-                    A = np.random.choice(nA, p=p/p.sum())
+                    try:
+                        A = np.random.choice(nA, p=p/p.sum())
+                    except ValueError as e:
+                        raise Exception(f"{e}\n sum p ={p.sum()}, p={p} @ S={state}")
                 else:
                     A = np.random.choice(np.arange(nA)[Amask.astype(bool)])
             elif self.mode=='argmax':

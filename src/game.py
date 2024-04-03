@@ -8,7 +8,7 @@ class Game:
     def __init__(self, player_list: list[Player], bot_model_file="bot.npy"):
         self.player_list = player_list
         self.bot_mdp = Rule()
-        self.bot = Agent(np.load(bot_model_file,allow_pickle=1).item()["nash"][0], mode="prob")
+        self.bot = Agent(np.load(bot_model_file,allow_pickle=1).item()["nash"], mode="prob")
         self.init_game()
 
     def init_game(self):
