@@ -5,7 +5,7 @@ rlsn 2024
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import numpy as np
-from src.model.env import YunEnv
+from src.model.env import YunEnv, Rule
 from src.model.agent import Agent
 import argparse, time, itertools
 from scipy.linalg import schur
@@ -17,9 +17,12 @@ if __name__ == "__main__":
     parser.add_argument('--run', action='store_true', help="run example match with lastest moddel")
     parser.add_argument('-r', action='store_true', help="start match with random initial states")
     parser.add_argument('--stats', action='store_true', help="run state analysis")
-    parser.add_argument('-s', type=int, help="grid size of the stats to display", default=3)
+    parser.add_argument('-s', type=int, help="grid size of the stats to display", default=None)
     parser.add_argument('--tour', action='store_true', help="run tournament")
     parser.add_argument('--selfplay', action='store_true', help="run self play")
+    parser.add_argument('--Smax', type=int, help="max energy level of the game", default=5)
+    parser.add_argument('--Amax', type=int, help="max attack level of the game", default=3)
+
 
     args = parser.parse_args()
     if args.seed:
@@ -29,11 +32,13 @@ if __name__ == "__main__":
     np.random.seed(seed)
     print("running with seed", seed)
 
-    env = YunEnv()
+    rule = Rule(n_max_energy=args.Smax, level=args.Amax, init_energy=1)
 
-    model = np.load(args.model_file, allow_pickle=True).item()
-    nash = model.get('nash')[0]
-    Pi = model.get('pi')[0]
+    env = YunEnv(rule=rule)
+
+    model = np.load(args.model_file,allow_pickle=True).item()
+    nash = model.get('nash')
+    Pi = model.get('pi')
     print("model loaded from {}, size {}".format(args.model_file, Pi.shape))
 
     if args.run:
@@ -54,27 +59,31 @@ if __name__ == "__main__":
     if args.stats:
         # some analysis at particular states
         Na = env.action_space.n
-        grid_size = args.s
-        avg_size = 5
-        action_labels = ["C", "A1", "A2", "A3", "D1", "D2", "D3"]
+        grid_size = args.s if args.s is not None else rule.n_max_energy+1
+        action_labels = ["C"]+[f"A{i+1}" for i in range(rule.level)]+[f"D{i+1}" for i in range(rule.level)]
 
         # state-action value grid
         fig, axs = plt.subplots(grid_size, grid_size, figsize=(10, 10))
         fig.suptitle("Behavioral Strategy @ appox. Nash Equilibrium")
         for S1 in range(grid_size):
             for S2 in range(grid_size):
-                S = S1 * (env.rule.n_max_energy + 1) + S2
-                mean = model.get('nash')[:avg_size, S].mean(0)
-                std = model.get('nash')[:avg_size, S].std(0)
-                axs[S1, S2].bar(np.arange(Na) + 1, mean, yerr=std, alpha=0.5)
-                axs[S1, S2].text(4, 0.5, f"({S1},{S2})",
-                                 ha="center", va="center", color="black", alpha=0.15, fontsize=20, weight='bold')
-                axs[S1, S2].set_xticks(np.arange(nash.shape[-1]) + 1, action_labels)
-                axs[S1, S2].set_ylim(0, 1)
-                axs[S1, S2].grid()
+                S = S1 * (env.rule.n_max_energy+1) + S2
 
-                if S1 == grid_size - 1:
-                    axs[S1, S2].set_xlabel("A")
+                if len(nash.shape)==3:
+                    mean = nash.mean(0)
+                    std = nash.std(0)
+                    axs[S1,S2].bar(np.arange(Na)+1,mean[S],yerr=std[S], alpha=0.5)
+                else:
+                    axs[S1,S2].bar(np.arange(Na)+1,nash[S], alpha=0.5)
+
+                axs[S1,S2].text(Na//2+1, 0.5, f"({S1},{S2})",
+                            ha="center", va="center", color="black", alpha=0.15, fontsize=20, weight='bold')
+                axs[S1,S2].set_xticks(np.arange(nash.shape[-1])+1,action_labels)
+                axs[S1,S2].set_ylim(0, 1) 
+                axs[S1,S2].grid()
+                
+                if S1==grid_size-1:
+                    axs[S1,S2].set_xlabel("A")
                 else:
                     axs[S1, S2].xaxis.set_ticklabels([])
                 if S2 == 0:
@@ -90,8 +99,7 @@ if __name__ == "__main__":
         max_steps = 30
         num_models = 20
         random_start = args.r
-        Pi_all = model.get('pi').reshape(-1, Pi.shape[1], Pi.shape[2])
-        pi = Pi_all[:num_models]
+        pi = Pi[:num_models]
         NP = pi.shape[0]
         R = np.zeros([NP, NP])
         ns = env.rule.n_max_energy + 1
@@ -203,19 +211,15 @@ if __name__ == "__main__":
         fig.tight_layout()
 
         # stats
-        print("total match finished: {}".format(env.rule.num_matches))
-        print("violation end: {}".format(env.rule.violation))
-        print("stupidity end: {}".format(env.rule.stupidity))
-        print("busted end: {}".format(env.rule.busted))
-        print("outpowered end: {}".format(env.rule.outpowered))
-        print("mismatch end: {}".format(env.rule.mismatch))
         plt.show()
 
     if args.selfplay:
         N = 100000
-        print(f"running selfplay (nash vs agent 0) {int(N)} times")
-        P1 = Agent(nash, mode='prob')
-        P2 = Agent(Pi[0], mode='prob')
+        print(f"running selfplay (custom vs nash) {int(N)} times")
+        custom_pi = np.copy(nash)
+        custom_pi[7]=np.array([1,0,0,0,0,0,0])
+        P1 = Agent(custom_pi, mode='prob')
+        P2 = Agent(nash, mode='prob')
         rewards = []
         length = []
         ns = env.rule.n_max_energy + 1
@@ -297,12 +301,7 @@ if __name__ == "__main__":
         rewards = np.array(rewards)
         win = rewards[rewards > 0].shape[0]
         print(f"total match finished within {env.max_episode_steps} steps: {len(rewards)}")
-        print(f"win/loss={win}/{len(rewards) - win}")
-        print(f"violation end: {env.rule.violation}")
-        print(f"stupidity end: {env.rule.stupidity}")
-        print(f"busted end: {env.rule.busted}")
-        print(f"outpowered end: {env.rule.outpowered}")
-        print(f"mismatch end: {env.rule.mismatch}")
-        print(f"mean length = {np.average(length)} +- {np.std(length) / np.sqrt(len(length))}")
-        print(f"mean reward = {np.average(rewards)} +- {np.std(rewards) / np.sqrt(len(rewards))}")
+        print(f"win/loss={win}/{len(rewards)-win}")
+        print(f"mean length = {np.average(length)} +- {np.std(length)/np.sqrt(len(length))}")
+        print(f"mean reward = {np.average(rewards)} +- {np.std(rewards)/np.sqrt(len(rewards))}")
         plt.show()
