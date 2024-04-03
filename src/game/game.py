@@ -114,8 +114,8 @@ class Game:
                 player.action_defense()
 
         # Check game status by count up living player
-        living_player = [1 for player in self.player_list if not player.dead]
-        if sum(living_player) == 1:
+        living_player = [player for player in self.player_list if not player.dead]
+        if len(living_player) == 1:
             self.game_stopped = True
             print(f"Game over - {living_player[0]} win!")
 
