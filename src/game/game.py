@@ -4,15 +4,14 @@ from src.model.agent import Agent
 from src.model.env import YunEnv, Rule
 import numpy as np
 
-
 class Game:
     def __init__(self, player_list: list[Player], bot_model_file="bot.npy"):
         self.player_list = player_list
         self.bot_mdp = Rule()
-        self.bot = Agent(np.load(bot_model_file, allow_pickle=1).item()["nash"][0], mode="prob")
-        self._init_game()
+        self.bot = Agent(np.load(bot_model_file), mode="prob")
+        self.init_game()
 
-    def _init_game(self):
+    def init_game(self):
         self.num_round = 0
         self.game_stopped = False
         [player.init_player(index) for index, player in enumerate(self.player_list)]

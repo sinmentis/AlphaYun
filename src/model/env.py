@@ -15,14 +15,6 @@ class Rule(object):
         self.n_max_actions = 1 + self.level * 2  # 1 yun + n attack + n defense
         self.init_energy = init_energy
 
-        # some stats for analysis/debugging etc.
-        self.num_matches = 0  # number of matches since initialization
-        self.violation = 0  # attack without enough energy
-        self.stupidity = 0  # defense when opponent lacks energy
-        self.outpowered = 0  # attack level higher than opponent
-        self.busted = 0  # attack when opponent charges
-        self.mismatch = 0  # used wrong defense against attack
-
     def decode_action(self, action_id):
         if action_id is None:
             return 0, 0, 0
@@ -75,15 +67,11 @@ class Rule(object):
         if agent_next_state < 0:
             agent_next_state = 0
             game_next_state = 1
-            self.violation += 1
-            self.num_matches += 1
             return agent_next_state, opponent_next_state, game_next_state
 
         # punish stupid actions
         if d1 > opponent_state:
             game_next_state = 1
-            self.stupidity += 1
-            self.num_matches += 1
             return agent_next_state, opponent_next_state, game_next_state
 
         # handle result
@@ -92,93 +80,7 @@ class Rule(object):
         elif a2 and a2 > a1 and a2 != d1:  # agent loss
             game_next_state = 1
 
-        if game_next_state > 0:
-            if y1 or y2:
-                self.busted += 1
-            elif a1 and a2 and a1 != a2:
-                self.outpowered += 1
-            else:
-                self.mismatch += 1
-            self.num_matches += 1
         return agent_next_state, opponent_next_state, game_next_state
-
-
-class RPSEnv(gym.Env):
-    # toy env for testing sanity of the algorithm
-    def __init__(self, max_episode_steps=100, **kargs):
-        self.opponent = None
-        self.train = False
-        # Observation is a Cartesian space of the agent's and the opponent's energy,
-        # as well as the current game state (ongoing 0/lose 1/win 2)
-        self.win_state_id = 1
-        self.loss_state_id = 2
-        self.n_ternimal = 2
-        self.observation_space = spaces.Discrete(3)
-
-        # Action space is the maximum number of actions possible
-        self.action_space = spaces.Discrete(3)
-
-        self.max_episode_steps = max_episode_steps
-
-    def _get_info(self):
-        return {
-            "agent_action": self._agent_action,
-            "opponent_action": self._opponent_action,
-            "game_state": self._game_state
-        }
-
-    def reset(self, seed=None, opponent=None, **kargs):
-        super().reset(seed=seed)
-        if opponent is not None:
-            self.opponent = opponent
-        # game start
-        self._game_state = 0
-
-        # value init
-        self._agent_action = None
-        self._opponent_action = None
-
-        observation = self._game_state
-        info = self._get_info()
-        self._i_step = 0
-        return observation, info
-
-    def available_actions(self, state):
-        return np.ones(3)
-
-    def step(self, action):
-        self._agent_action = action
-        if self.opponent is not None:
-            self._opponent_action = self.opponent.step(self._game_state, self.action_space.n)
-        else:
-            self._opponent_action = self.action_space.sample()
-
-        d = self._agent_action - self._opponent_action
-        bonus = 2
-        if d % 3 == 1:
-            self._game_state = 1
-            reward = 1
-            if self._agent_action == 1:
-                reward = bonus
-        elif d % 3 == 2:
-            self._game_state = 2
-            reward = -1
-            if self._opponent_action == 1:
-                reward = -bonus
-        else:
-            self._game_state = 0
-            reward = 0
-
-        # An episode is done iff one agent has won
-        terminated = self._game_state > 0
-        observation = self._game_state
-        info = self._get_info()
-
-        self._i_step += 1
-        truncated = self._i_step >= self.max_episode_steps
-
-        return observation, reward, terminated, truncated, info
-
 
 class YunEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 4}
@@ -206,6 +108,7 @@ class YunEnv(gym.Env):
         self.render_mode = render_mode
 
         self.max_episode_steps = max_episode_steps
+        self.action_matrix = np.array([self.available_actions(s) for s in range(self.observation_space.n)])
 
     @staticmethod
     def convert_obs(S1, S2, rule):
@@ -276,6 +179,7 @@ class YunEnv(gym.Env):
         observation = self._get_obs()
         info = self._get_info()
         self._i_step = 0
+        self.obs_history=[]
         if self.render_mode == "human":
             self._render_frame()
 
@@ -304,19 +208,19 @@ class YunEnv(gym.Env):
 
         observation = self._get_obs()
         info = self._get_info()
-
+        truncated = observation in self.obs_history # truncate if the state is visited
+        self.obs_history.append(observation)
         if self.render_mode == "human":
             self._render_frame()
 
-        self._i_step += 1
-        truncated = self._i_step >= self.max_episode_steps
+        self._i_step+=1
+        truncated = truncated or self._i_step>=self.max_episode_steps
 
         return observation, reward, terminated, truncated, info
 
 
 def test():
     env = YunEnv()
-    # env = RPSEnv()
 
     print(env.observation_space.n)
     print(env.action_space.n)
